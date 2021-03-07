@@ -1,0 +1,152 @@
+pico-8 cartridge // http://www.pico-8.com
+version 18
+__lua__
+--game initialization
+
+function _init()
+  size = 0
+  new_game(5, 3)
+end
+
+function new_game(_size, _balls)
+  grid = {}
+  size = _size
+  cx = 0
+  cy = 0
+
+  marked_balls = 0
+  total_balls = _balls
+  balls_available = total_balls - marked_balls
+
+  new_board(size, total_balls)
+end
+
+function new_board(size, balls)
+  for i = 1, size do
+    grid[i] = {}
+    for j = 1, size do
+      grid[i][j] = 0
+      mset(i, j, 1)
+    end
+  end
+
+  while (balls > 0) do
+    i = 1 + flr(rnd(size))
+    j = 1 + flr(rnd(size))
+    if (grid[i][j] == 0) then
+      grid[i][j] = 1
+      balls -= 1
+    end
+  end
+end
+
+-->8
+--game logic updates
+function _update()
+  -- nsize = 5 + flr(rnd(3))
+  -- nballs = 1 + flr(rnd(4))
+  -- new_game(nsize, nballs)
+  cursor_move()
+  cursor_mark()
+end
+
+function cursor_move()
+  -- left right up down
+  if btnp(0) then cx -= 1 end
+  if btnp(1) then cx += 1 end
+  if btnp(2) then cy -= 1 end
+  if btnp(3) then cy += 1 end
+
+  if cy > size then cy = size end
+  if cx > size then cx = size end
+  if cy < 0 then cy = 0 end
+  if cx < 0 then cx = 0 end
+end
+
+function cursor_mark()
+  inside_grid =
+  (cy <= size) and (cy >= 1) and
+  (cx <= size) and (cx >= 1)
+  on_grid_edge = not inside_grid
+  if inside_grid then
+    printh("inside_grid")
+    -- mark grid
+    if btnp(4) then
+      if mget(cx, cy) == 002 then
+        mset(cx, cy, 001)
+        marked_balls -= 1
+      else
+        if balls_available > 0 then
+          mset(cx, cy, 002)
+          marked_balls += 1
+        end
+      end
+      balls_available = total_balls - marked_balls
+    elseif btnp(5) then
+      if mget(cx, cy) == 003 then
+        mset(cx, cy, 001)
+      else
+        mset(cx, cy, 003)
+      end
+    end
+  elseif on_grid_edge then
+    fire_laser(cx, cy)
+  end
+end
+
+function fire_laser(startx, starty)
+  
+end
+
+-->8
+--drawing
+
+function _draw()
+  cls()
+  offset = flr((128 - (size+1.5)*9) / 2)
+  -- printh("offset " .. offset .. " for size " .. size)
+
+  for i = 1, balls_available do
+    spr(002,0 + 9*i,0)
+  end
+
+  for i = 1, size do
+    for j = 1, size do
+      spr(mget(i, j),
+        offset + i*9,
+        offset + j*9)
+    end
+  end
+
+
+  for i = 0, size, size do
+    for j = 0, size do
+      spr(004, offset + i*9, offset + j*9)
+    end
+  end
+
+  for i = 0, size do
+    for j = 0, size, size do
+      spr(004, offset + i*9, offset + j*9)
+    end
+  end
+
+  spr(0, offset+cx*9, offset+cy*9)
+end
+__gfx__
+cc0000cc7777777777555577aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+c000000c7777777775555557aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000007777777755555555aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000007777777755555555aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000007777777755555555aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000007777777755555555aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+c000000c7777777775555557aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+cc0000cc7777777777555577aaaaaaaa666666660000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+77000077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+70000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+70000007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+77000077000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
