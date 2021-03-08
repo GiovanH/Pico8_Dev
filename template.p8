@@ -7,11 +7,13 @@ __lua__
 -- global vars
 local todo
 
---factors 1-15, 18, 20-24, others (27720)
-
 -->8
 -- utility
+
+-- random in range
 function rndr(a, b) return rnd(b - a) + a end
+
+-- random int
 function rndi(n) return flr(rnd(n)) end
 
 function sort(list, keyfunc)
@@ -182,14 +184,6 @@ end
 -->8
 -- game classes
 
--->8
--- drawing
-
-function draw_bg()
- cls()
-end
-
--->8
 -- test (delete this)
 
 local testguy = mob(vec(32, 64), 0)
@@ -250,6 +244,15 @@ teststage:add(testgamepad)
 teststage:add(testguy)
 teststage:add(testhelloworld)
 
+bg = actor()
+function bg:draw()
+ cls()
+end
+bg.z = -100
+
+teststage:add(bg)
+
+
 -->8
 --pico-8 builtins
 
@@ -261,7 +264,6 @@ function _update()
 end
 
 function _draw()
- draw_bg()
  teststage:draw()
 end
 
