@@ -7,6 +7,7 @@ __lua__
 -- global vars
 local todo
 
+local debug = true
 -->8
 -- utility
 
@@ -25,7 +26,7 @@ end
 function printa(...)
  local args={...}  -- becomes a table of arguments
  s = ""
- foreach(args, function(a) s = s..','..a end)
+ foreach(args, function(a) s = s..','..tostring(a) end)
  printh(s)
 end
 
@@ -130,6 +131,9 @@ function bbox:outline(w)
   self.size + vw*2
  )
 end
+function bbox:center()
+ return self.origin + self.size*(1/2)
+end
 function bbox:itermap()
  -- todo document this
  local x0 = flr(self.x0)
@@ -139,9 +143,7 @@ function bbox:itermap()
   if x >= self.x1 then
    x = x0
    y += 1
-   if y >= self.y1 then
-    return
-   end
+   if (y >= self.y1) return
   end
   return x, y, mget(x, y)
  end
@@ -154,14 +156,11 @@ local actor = obj:extend{
  z = 0,
  age = -1,
  ttl = nil,
- anchor = vec(),
+ anchor = vec()
 }
 function actor:init(pos)
  self.pos = pos
- if self.size then
-  self.shape = bbox(
-   pos - self.anchor, self.size)
- end
+ printa('a', self.pos)
 end
 function actor:update()
  self.age += 1
@@ -171,13 +170,27 @@ function actor:update()
 end
 function actor:destroy() self._doomed = true end
 
-local mob = actor:extend{}
+local mob = actor:extend{
+ size = vec(7,7)
+}
 function mob:init(pos, ...)
  self.spr, self.size = ...
  actor.init(self, pos)
+ self.shape = bbox(
+  self.pos - self.anchor, 
+  self.size
+ )
+end
+function mob:update()
+ actor.update(self)
+ self.shape = bbox(
+  self.pos - self.anchor, 
+  self.size
+ )
 end
 function mob:draw()
  spr(self.spr, self.pos:unpack())
+ if (debug) rect(mrconcat({self.shape:unpack()}, 13))
 end
 
 local particle = actor:extend{}
@@ -223,21 +236,22 @@ end
 function stage:draw()
  self:_zsort()
  for actor in all(self.actors) do
-  if not actor._doomed then
-   actor:draw()
-  end
+  if (not actor._doomed) actor:draw()
  end
 end
 
 -->8
 -- game classes
 
-local o_soul = mob(vec(64, 64), 0, vec(7,7))
+local o_soul = mob(vec(64, 64), 0)
 o_soul.arena = nil
 function o_soul:update()
  -- fit self to arena
 
  -- todo
+ if not self.shape:within(self.arena.shape) then
+  self.pos = self.arena.shape:center()
+ end
 
  -- player movement
  local xspeed = vec(1, 0)
@@ -246,7 +260,7 @@ function o_soul:update()
  function moveif()
   local nbox = bbox(
    npos - self.anchor, self.size)
-  if (nbox:within(self.arena.shape)) then
+  if nbox:within(self.arena.shape) then
    self.pos = npos
   else
    npos = self.pos
@@ -256,16 +270,18 @@ function o_soul:update()
  elseif (btn(1)) then npos += xspeed moveif() end
  if (btn(2)) then npos -= yspeed moveif()
  elseif (btn(3)) then npos += yspeed moveif() end
+ 
+ mob.update(self)
 end
 
 local o_arena = actor()
 o_arena.shape = bbox(vec(32,32), vec(64, 64))
 function o_arena:update()
  -- move arena with p2
- if (btn(0,1)) then self.shape:shift(vec(-1, 0))
- elseif (btn(1,1)) then self.shape:shift(vec(1, 0)) end
- if (btn(2,1)) then self.shape:shift(vec(0, -1))
- elseif (btn(3,1)) then self.shape:shift(vec(0, 1)) end
+ if (btn(0,1)) then self.shape:shift(vec(-8, 0))
+ elseif (btn(1,1)) then self.shape:shift(vec(8, 0)) end
+ if (btn(2,1)) then self.shape:shift(vec(0, -8))
+ elseif (btn(3,1)) then self.shape:shift(vec(0, 8)) end
 end
 function o_arena:draw()
  rect(mrconcat({self.shape:unpack()}, 3))
