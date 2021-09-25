@@ -5,9 +5,12 @@ __lua__
 -- title
 
 -- global vars
-local todo
 
 local debug = true -- (stat(6) == 'debug')
+
+-->8
+-- utility
+
 if (debug) menuitem(5,'toggle debug',function() debug = not debug end)
 
 dbg=(function()
@@ -147,9 +150,6 @@ dbg=(function()
  }
 end)()
 
--->8
--- utility
-
 -- any to string (dumptable)
 function tostring(any)
  if (type(any)~="table") return tostr(any)
@@ -218,8 +218,14 @@ function obj:__call(...)
 end
 function obj:extend(proto)
  proto = proto or {}
- proto.__call, proto.__index =
- self.__call, proto
+ -- copy meta values, since lua doesn't walk the prototype chain to find them
+ for k, v in pairs(self) do
+  if sub(k, 1, 2) == "__" then
+   proto[k] = v
+  end
+ end
+ proto.__index = proto
+ proto.__super = self
  return setmetatable(proto, self)
 end
 
@@ -316,49 +322,53 @@ function actor:destroy() self._doomed = true end
 local mob = actor:extend{
  size = vec(7,7),
  anim = nil,
- frame_len = 1
+ frame_len = 1,
+ flipx = false,
+ flipy = false
 }
 function mob:init(pos, ...)
  self.spr, self.size = ...
  actor.init(self, pos)
  self.shape = bbox(
-  self.pos - self.anchor,
+  self.pos,
   self.size
  )
 end
 function mob:update()
  actor.update(self)
  self.shape = bbox(
-  self.pos - self.anchor,
+  self.pos,
   self.size
  )
 end
 function mob:draw()
  -- caching unpack saves tokens
- local spx, spy = self.pos:unpack()
+ local temp = (self.pos - self.anchor)  -- picotool :(
+ local spx, spy = temp:unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
  -- anim is a list of frames to loop
  -- frames are sprite ids
- if self.anim then 
+ if self.anim then
   local findex = (flr(self.stage.mclock/self.frame_len) % #self.anim) +1
   local frame = self.anim[findex]
   self._frame, self._findex = frame, findex
-  
+
   -- printh(tostring({i=findex, s=self.name, a=self.anim, f=frame}))
   -- if type(frame) == "function"
-  --  frame()  
+  --  frame()
   -- else
-   if (frame != false) spr(frame, spx, spy, spw, sph)
-  -- end
+  if (frame != false) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
+ -- end
  else
-  spr(self.spr, spx, spy, spw, sph)
+  spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
  end
- if debug then 
+ if debug then
   -- print bbox and anchor/origin
   rect(mrconcat({self.shape:unpack()}, 13))
-  line(spx, spy, 
-   mrconcat({(self.pos - self.anchor):unpack()}, 4))
+  local temp = (self.pos - self.anchor)  --p8tool :(
+  line(spx, spy,
+   mrconcat({temp:unpack()}, 4))
  end
 end
 
@@ -432,7 +442,7 @@ function o_soul:update()
  local npos = self.pos
  function moveif()
   local nbox = bbox(
-   npos - self.anchor, self.size)
+   npos, self.size)
   if nbox:within(self.arena.shape) then
    self.pos = npos
   else
@@ -487,7 +497,6 @@ end
 
 local t_testbullet = mob:extend{
  ttl = 200,
- anchor = vec(-1, -1),
  anim = {016, 017, 018, 019},
  name = 'bullet',
  frame_len = 2
@@ -499,15 +508,15 @@ end
 function t_testbullet:update()
  local wholescreen = bbox(vec(0, 0), vec(128, 128))
 
+ self.pos += vec(0, 0.6)
+
  if self._findex == 1 then
-  self.anchor = vec(-1, 0)
+  self.anchor = vec(1, 0)
   self.size = vec(3, 5)
  elseif self._findex == 3 then
-  self.anchor = vec(0, -1)
+  self.anchor = vec(0, 1)
   self.size = vec(5, 3)
  end
-
- self.pos += vec(0, 0.6)
 
  if not self.shape:overlaps(wholescreen) then
   self:destroy()
@@ -519,6 +528,7 @@ function t_testbullet:update()
  end
 
  mob.update(self)
+
 end
 
 local o_tpattern = mob(vec(64, 16), 001)
@@ -574,19 +584,18 @@ function bg:draw()
 end
 bg.z = -100
 
-o_soul.arena = o_arena
-o_tpattern.arena = o_arena
-
-teststage = stage()
-teststage:add(bg)
-teststage:add(o_arena)
-teststage:add(o_soul)
-teststage:add(o_tpattern)
-
 -->8
 --pico-8 builtins
 
 function _init()
+ o_soul.arena = o_arena
+ o_tpattern.arena = o_arena
+
+ teststage = stage()
+ teststage:add(bg)
+ teststage:add(o_arena)
+ teststage:add(o_soul)
+ teststage:add(o_tpattern)
 end
 
 function _update()
@@ -616,5 +625,14 @@ __gfx__
 07777000007777000777700077770000077000000770077000000000777777700770077007777000077000000770077000000000000000000000000000000000
 00770000000770000000000007700000077000000770077000000000777077700770077007700770077000000770077000000000000000000000000000000000
 00000000000000000000000000000000077777700777777000000000770007700777777007700770077777700777777000000000000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00112233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00112233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+44556677000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+44556677000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+8899aabb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+8899aabb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+ccddeeff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+ccddeeff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000100001d0501a0500c0500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
