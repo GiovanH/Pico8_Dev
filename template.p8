@@ -7,7 +7,7 @@ __lua__
 
 -- global vars
 
-local debug = true -- (stat(6) == 'debug')
+local debug = true  -- (stat(6) == 'debug')
 
 -->8
 -- utility
@@ -25,7 +25,7 @@ dbg=function()
  end
  function inspect(v,d)
   d=d or 0
-  local t=type(v)  
+  local t=type(v)
   if t=="table" then
    if(d>5)return "[table]"
    local props={}
@@ -42,12 +42,12 @@ dbg=function()
    return v and "true" or "false"
   elseif t=="nil" or t=="function" or t=="thread" then
    return "["..t.."]"
-  else 
+  else
    return ""..v
   end
  end
  function drawvar(var,name)
-  if type(var)=="string" then  
+  if type(var)=="string" then
    print(name..":",x+4,y,6)
    print(var,x+#(""..name)*4+8,y,7)
    y+=6
@@ -60,7 +60,7 @@ dbg=function()
    if var.expand then
     x+=2
     for key,val in pairs(var.props) do
-     drawvar(val,key)    
+     drawvar(val,key)
     end
     x-=2
    end
@@ -79,10 +79,10 @@ dbg=function()
   local p,i=vars[name],inspect(var)
   if(p)copyuistate(p,i)
   vars[name]=i
- end 
+ end
  function clear()
   vars={}
- end 
+ end
  function draw(dx,dy,w,h)
   dx=dx or 0
   dy=dy or 48
@@ -104,9 +104,9 @@ dbg=function()
   click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
   pb=mb
 
-  if exp then  
+  if exp then
 
-   -- variables       
+   -- variables
    for k,v in pairs(vars) do
     drawvar(v,k)
    end
@@ -120,9 +120,9 @@ dbg=function()
   if(butn(exp,dx+w-10,dy))exp=not exp
 
   -- draw mouse ptr
-  clip()    
+  clip()
   line(mx,my,mx,my+2,8)
-  color(7) 
+  color(7)
  end
 
  function show()
@@ -349,25 +349,26 @@ function mob:draw()
  spw, sph = ceil(spw/8), ceil(sph/8)
  -- anim is a list of frames to loop
  -- frames are sprite ids
- if self.anim then 
+ if self.anim then
   local findex = (flr(self.stage.mclock/self.frame_len) % #self.anim) +1
   local frame = self.anim[findex]
   self._frame, self._findex = frame, findex
-  
+
   -- printh(tostring({i=findex, s=self.name, a=self.anim, f=frame}))
   -- if type(frame) == "function"
-  --  frame()  
+  --  frame()
   -- else
-   if (frame != false) spr(frame, spx, spy, spw, sph)
-  -- end
+  if (frame != false) spr(frame, spx, spy, spw, sph)
+ -- end
  else
   spr(self.spr, spx, spy, spw, sph)
  end
- if debug then 
+ if debug then
   -- print bbox and anchor/origin
   rect(mrconcat({self.shape:unpack()}, 13))
-  line(spx, spy, 
-   mrconcat({(self.pos - self.anchor):unpack()}, 4))
+  local temp = (self.pos - self.anchor) --p8tool :(
+  line(spx, spy,
+   mrconcat({temp:unpack()}, 4))
  end
 end
 
@@ -487,12 +488,12 @@ bg.z = -100
 --pico-8 builtins
 
 function _init()
-  teststage = stage()
-  teststage:add(testgamepad)
-  teststage:add(testguy)
-  teststage:add(testhelloworld)
+ teststage = stage()
+ teststage:add(testgamepad)
+ teststage:add(testguy)
+ teststage:add(testhelloworld)
 
-  teststage:add(bg)
+ teststage:add(bg)
 end
 
 function _update()
