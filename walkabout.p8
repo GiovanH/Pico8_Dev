@@ -206,10 +206,14 @@ function sort(list, keyfunc)
  end
 end
 
+function clamp(min_, query, max_)
+ return min(max_, max(min_, query))
+end
+
 -- print with shadow
 local function prints(s, x, y, c1, c2)
  print(s, x, y+1, c2 or 1)
- print(s, x, y, c1)
+ print(s, x, y, c1 or 7)
 end
 
 --yield xn
@@ -289,6 +293,7 @@ function bbox:outline(w)
   self.size + vw*2
  )
 end
+function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
 function bbox:center()
  return self.origin + self.size*(1/2)
 end
@@ -338,6 +343,8 @@ function actor:update()
  if self.ttl and self.age >= self.ttl then
   self:destroy()
  end
+ -- camera perspective
+ self.z = self.pos.y
 end
 function actor:destroy() self._doomed = true end
 
@@ -367,7 +374,7 @@ function mob:update()
 end
 function mob:draw()
  -- caching unpack saves tokens
- local temp = (self.pos - self.anchor)  -- picotool :(
+ local temp = (self.pos + self.anchor)  -- picotool :(
  local spx, spy = temp:unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
@@ -390,9 +397,9 @@ function mob:draw()
  if debug then
   -- print bbox and anchor/origin
   rect(mrconcat({self.shape:unpack()}, 13))
-  local temp = (self.pos - self.anchor)  --p8tool :(
   line(spx, spy,
-   mrconcat({temp:unpack()}, 4))
+   mrconcat({self.pos:unpack()}, 4))
+  pset(spx, spy, 5)
  end
 end
 
@@ -444,36 +451,236 @@ function stage:draw()
 end
 
 -->8
+-- game utility
+
+-- dialog box
+-- by rusty bailey
+
+dialoger = {
+ x = 8,
+ y = 97,
+ color = 7,
+ max_chars_per_line = 27,
+ max_lines = 4,
+ queue = {},
+ blinking_counter = 0,
+ init = function(self)
+ end,
+ enqueue = function(self, message) --, autoplay)
+  -- default autoplay to false
+  -- autoplay = type(autoplay) == "nil" and false or autoplay
+  add(self.queue, {
+    message = message,
+    -- autoplay = autoplay
+   })
+
+  if (#self.queue == 1) then
+   self:trigger(self.queue[1].message) -- , self.queue[1].autoplay)
+  end
+ end,
+ trigger = function(self, message) -- , autoplay)
+  --self.autoplay = autoplay
+  self.current_message = ''
+  self.messages_by_line = nil
+  self.animation_loop = nil
+  self.current_line_in_table = 1
+  self.current_line_count = 1
+  self.pause_dialog = false
+  self:format_message(message)
+  self.animation_loop = cocreate(self.animate_text)
+ end,
+ format_message = function(self, message)
+  local total_msg = {}
+  local word = ''
+  local letter = ''
+  local current_line_msg = ''
+
+  for i = 1, #message do
+   -- get the current letter add
+   letter = sub(message, i, i)
+
+   -- keep track of the current word
+   word ..= letter
+
+   -- if it's a space or the end of the message,
+   -- determine whether we need to continue the current message
+   -- or start it on a new line
+   if letter == ' ' or i == #message then
+    -- get the potential line length if this word were to be added
+    local line_length = #current_line_msg + #word
+    -- if this would overflow the dialog width
+    if line_length > self.max_chars_per_line then
+     -- add our current line to the total message table
+     add(total_msg, current_line_msg)
+     -- and start a new line with this word
+     current_line_msg = word
+    else
+     -- otherwise, continue adding to the current line
+     current_line_msg ..= word
+    end
+
+    -- if this is the last letter and it didn't overflow
+    -- the dialog width, then go ahead and add it
+    if i == #message then
+     add(total_msg, current_line_msg)
+    end
+
+    -- reset the word since we've written
+    -- a full word to the current message
+    word = ''
+   end
+  end
+
+  self.messages_by_line = total_msg
+ end,
+ animate_text = function(self)
+  -- for each line, write it out letter by letter
+  -- if we each the max lines, pause the coroutine
+  -- wait for input in update before proceeding
+  for k, line in pairs(self.messages_by_line) do
+   self.current_line_in_table = k
+   for i = 1, #line do
+    self.current_message ..= sub(line, i, i)
+
+    -- press btn 5 to skip to the end of the current passage
+    -- otherwise, print 1 character per frame
+    -- with sfx about every 5 frames
+    if (not btnp(5)) then
+     if (i % 5 == 0) sfx(0)
+     yield()
+    end
+   end
+   self.current_message ..= '\n'
+   self.current_line_count += 1
+   if ((self.current_line_count > self.max_lines) or (self.current_line_in_table == #self.messages_by_line)) then --  and not self.autoplay)) then
+    self.pause_dialog = true
+    yield()
+   end
+  end
+
+  -- if (self.autoplay) then
+  --  self.delay(30)
+  -- end
+ end,
+ shift = function (t)
+  local n=#t
+  for i = 1, n do
+   if i < n then
+    t[i] = t[i + 1]
+   else
+    t[i] = nil
+   end
+  end
+ end,
+ -- helper function to add delay in coroutines
+ delay = function(frames)
+  for i = 1, frames do
+   yield()
+  end
+ end,
+ update = function(self)
+  if (self.animation_loop and costatus(self.animation_loop) != 'dead') then
+   if (not self.pause_dialog) then
+    coresume(self.animation_loop, self)
+   else
+    if btnp(4) then
+     self.pause_dialog = false
+     self.current_line_count = 1
+     self.current_message = ''
+    end
+   end
+  elseif (self.animation_loop and self.current_message) then
+   -- if (self.autoplay) self.current_message = ''
+   self.animation_loop = nil
+  end
+
+  if (not self.animation_loop and #self.queue > 0) then
+   self.shift(self.queue, 1)
+   if (#self.queue > 0) then
+    self:trigger(self.queue[1].message) -- , self.queue[1].autoplay)
+    coresume(self.animation_loop, self)
+   end
+  end
+
+  --if (not self.autoplay) then
+  self.blinking_counter += 1
+  if self.blinking_counter > 30 then self.blinking_counter = 0 end
+  --end
+ end,
+ draw = function(self)
+  local screen_width = 128
+
+  -- display message
+  if (self.current_message) then
+   rectfill(0,90,127,127,0)
+   rect(0,90,127,127,7)
+   print(self.current_message, self.x, self.y, self.color)
+  end
+
+  -- draw blinking cursor at the bottom right
+  if (self.pause_dialog) then -- not self.autoplay and 
+   if self.blinking_counter > 15 then
+    if (self.current_line_in_table == #self.messages_by_line) then
+     -- draw square
+     rectfill(
+      screen_width - 11,
+      screen_width - 10,
+      screen_width - 11 + 3,
+      screen_width - 10 + 3,
+      7
+     )
+    else
+     -- draw arrow
+     line(screen_width - 12, screen_width - 9, screen_width - 8,screen_width - 9)
+     line(screen_width - 11, screen_width - 8, screen_width - 9,screen_width - 8)
+     line(screen_width - 10, screen_width - 7, screen_width - 10,screen_width - 7)
+    end
+   end
+  end
+ end
+}
+
+-->8
 -- game classes
 
 local t_sign = mob:extend{
- lines = {}
+ lines = nil
 }
 function t_sign:addline(text)
+ if (self.lines == nil) self.lines = {}
  add(self.lines, text)
 end
 function t_sign:interact(player)
- dbg.print(self.lines)
+ for _, v in ipairs(self.lines) do
+  dialoger:enqueue(v)
+ end
 end
 
+local t_button = mob:extend{
+ lines = nil
+}
+function t_button:interact(player)
+ sfx(001)
+end
 
 local t_player = mob:extend{
  ismoving = false,
  hitbox = nil,
  facing = 'd',
- spr0 = 64
+ spr0 = 64,
+ anchor = vec(-8, -24)
 }
 function t_player:init(pos)
  mob:init(pos, 64, vec(15,23))
 end
 function t_player:get_hitbox(pos)
  return bbox(
-  pos + vec(0, 15),
+  pos + vec(-8, -7),
   vec(15, 7)
  )
 end
 function t_player:move()
--- player movement
+ -- player movement
  local vright = vec(1, 0)
  local vdown = vec(0, 1)
  local speed = 2
@@ -487,6 +694,12 @@ function t_player:move()
   dbg.watch(nhbox:maptiles(), "hittiles")
   for i,tile in pairs(nhbox:maptiles()) do
    if band(tile.flags, flag_walkable) == 0 then
+    unobstructed = false
+    break
+   end
+  end
+  for _,obj in pairs(self.stage.objects) do
+   if (nhbox:overlaps(obj.shape) and obj.obstructs) then
     unobstructed = false
     break
    end
@@ -519,20 +732,20 @@ function t_player:move()
 
  self.ismoving = moved
 
- self.stage.camfocus = self.pos + vec(8, 24)
+ self.stage.camfocus = self.pos
 end
 function t_player:tryinteract()
  -- try interact
  local facemap = {d=vec(0,1), u=vec(0,-1), l=vec(-1,0), r=vec(1,0)}
  if (btnp(4)) then
   self.ibox = bbox(
-   self.pos + vec(0, 7)+ facemap[self.facing]*8,
+   self.pos + self.anchor - vec(0, -8) + facemap[self.facing]*8,
    vec(2,2)*8
   )
   for _,obj in pairs(self.stage.objects) do
    if (self.ibox:overlaps(obj.shape) and obj.interact) then
-     obj:interact(self)
-     break
+    obj:interact(self)
+    break
    end
   end
  else
@@ -546,7 +759,7 @@ function t_player:update()
  self:tryinteract()
 
  mob.update(self)
- self.hitbox = self:get_hitbox(self.pos)
+ self.shape = self:get_hitbox(self.pos)
 end
 
 function t_player:draw()
@@ -555,12 +768,12 @@ function t_player:draw()
  local facemap = {d=0, u=2, l=4, r=4}
  self.spr = self.spr0 + facemap[self.facing]
  if self.ismoving and self.stage.mclock % 8 < 4 then
-  self.anchor = vec(0, 1)
+  self.anchor = vec(-8, -23)
  else
-  self.anchor = vec(0, 0)
+  self.anchor = vec(-8, -24)
  end
  mob.draw(self)
- if (debug) rect(mrconcat({self.hitbox:unpack()}, 5))
+ if (debug) rect(mrconcat({self.shape:unpack()}, 5))
  if (debug and self.ibox) rect(mrconcat({self.ibox:unpack()}, 10))
  palt()
 end
@@ -569,102 +782,157 @@ local room = stage:extend{
  camfocus = nil
 }
 function room:init(mx, my, mw, mh)
- -- size of room in map screens
- self.cell_pos = vec(mx, my)
- self.room_pos = self.cell_pos*16
- self.cell_size = vec(mw, mh)*16
- self.s_size = self.cell_size*8
- self.origin = self.room_pos*8
- -- origin in tiles
- -- self.origin = self.mapcoords * 16
- -- self.box = bbox(
- --  self.origin, self.size*16)
+ self.box_map = bbox(vec(mx, my), vec(mw, mh))
+ self.box_cells = self.box_map*16
+ self.box_px = self.box_cells*8
+
+ -- origin in units
+ self.origin_map = vec(mx, my)
+ self.origin_cells = self.origin_map*16
+ self.origin_px = self.origin_cells*8
+
+ -- extent in units
+ self.extent_map = vec(mw, mh)
+ self.extent_cells = self.extent_map*16
+ self.extent_px = self.extent_cells*8
  stage.init(room)
 end
 function room:draw()
+ local cell_x, cell_y = self.box_cells.origin:unpack()
+ local cell_w, cell_h = self.box_cells.size:unpack()
+ local sx, sy = self.box_px.origin:unpack()
+
  cls()
- -- local x, y = self.origin:unpack()
  local cam = self.camfocus - vec(64, 64)
+ local cx0, cy0, cx1, cy1 = self.box_px:unpack()
+ cam.x = clamp(cx0, cam.x, cx1-128)
+ cam.y = clamp(cy0, cam.y, cy1-128)
+
+
  camera(cam:unpack())
- if debug then
-  local ox, oy = self.origin:unpack()
-  local extent = self.origin + self.s_size
-  rect(ox, oy, mrconcat({extent:unpack()}, 10))
-  pset(mrconcat({cam:unpack()}, 9))
- end
 
  dbg.watch(cam,"cam")
- local cell_x, cell_y = self.room_pos:unpack()
- local cell_w, cell_h = self.cell_size:unpack()
- local sx, sy = self.origin:unpack()
  map(cell_x, cell_y, sx, sy, cell_w, cell_h)
  stage.draw(self)
  camera()
- if (debug and o_player) print('plr  ' .. tostring(o_player.pos), 0, 0)
- if (debug and o_player) print('room ' .. tostring(self.cell_pos), 0, 8)
+ if debug and o_player then 
+  -- rect(mrconcat({self.box_px:unpack()}, 10))
+  prints('plr  ' .. tostring(o_player.pos), 0, 0)
+  prints('room ' .. tostring(self.box_map), 0, 8)
+  prints('area ' .. tostring(self.box_px), 0, 16)
+  prints('cam ' .. tostring(cam), 0, 24)
+  prints(tostring(self.camfocus), 64, 24)
+ end
+ 
 end
 function room:add(object)
- object.pos += self.origin
+ object.pos += self.box_px.origin
  stage.add(self, object)
 end
 
 -->8
 --pico-8 builtins
 
-function _init()
- teststage = room(0, 1, 1, 1)
- o_player = t_player(vec(32, 48))
- teststage:add(o_player)
+cur_room = nil
+
+function room_complab()
+ cur_room = room(0, 1, 1, 1)
+ o_player = t_player(vec(12, 64))
+ o_player.pos += vec(12, 12)
+ cur_room:add(o_player)
+
  o_computer = t_sign(vec(88, 8), 112, vec(15, 7))
- o_computer:addline("it's just drawn on.")
- o_computer.bsize = vec(16,16)
- teststage:add(o_computer)
+ o_computer:addline(
+  "looks like someone was " ..
+  "planning a fundraising " ..
+  "campaign for a video game.")
+ o_computer:addline("too bad they're just a troll.")
+ o_computer.bsize = vec(15,15)
+ cur_room:add(o_computer)
+
+ o_computer2 = t_sign(vec(56, 8), 010, vec(15, 15))
+ o_computer2:addline(
+  "two white lines of text are blown up to fill the entire screen.")
+ o_computer2:addline("it's so huge you can read it from across the room.")
+ cur_room:add(o_computer2)
+
+ o_portal = t_button(vec(12, 64), 005, vec(23, 15))
+ -- o_portal.obstructs = true
+ cur_room:add(o_portal)
+ function o_portal:interact(p)
+  room_hallway()
+ end
+
+ cur_room:update() -- one predraw update
+ sfx(001)
+end
+
+function room_hallway()
+ cur_room = room(0, 0, 2, 1)
+ o_player = t_player(vec(12, 64))
+ cur_room:add(o_player)
+ cur_room.camfocus = vec(0, 0)
+
+ cur_room:update() -- one predraw update
+ sfx(001)
+end
+
+function _init()
+ room_complab()
 end
 
 function _update()
- teststage:update()
- dbg.watch(teststage,"stage")
+ dialoger:update()
+ if #dialoger.queue == 0 then
+  cur_room:update()
+ end
+
+ dbg.watch(dialog,"dialog")
+ dbg.watch(cur_room,"cur_room")
  dbg.watch(o_player,"player")
- dbg.watch(teststage.objects,"objects")
+ dbg.watch(cur_room.objects,"objects")
 end
 
 function _draw()
- teststage:draw()
+ cur_room:draw()
+ if #dialoger.queue > 0 then
+  dialoger:draw()
+ end
  if (debug) dbg.draw()
 end
 __gfx__
-00000000111111112222222233333333000000001111111111111111111111115000000000000005000000000000000000000000000000000000000000000000
-000000001111111122222222333333330000000011111111111111111111111156dd555d6d555556055555555555555000000000000000000000000000000000
-00000000111111112222222233333333000000001111111111111111111111110dddd555ddd55556011111111111111005555550000000000000000000000000
-00000000111111112222222233333333000000001111111111111111111111110ddddd555ddd555d015000000000051051111115000000000000000000000000
-00000000111111112222222233333333000000001111111111111111111111110dddddd555ddd555015066066060051051111115000000000000000000000000
-00000000111111112222222233333333000000001111111111111111111111110ddddddd555ddd5d015000000000051051111115000000000000000000000000
-00000000111111112222222233333333000000001111111111111111111111110dddddddd555dddd015066666066051051111115000000000000000000000000
-000000001111111122222222333333330000000011111111111111111111111105dddddddd555ddd015000000000051051111115000000000000000000000000
-444444445555555566666666777777772222222255555555ddddddddffffffff055dddddddd555d601555555555555105111111500000000dddddddddddddddd
-444444445555555566666666777777772222222255555555ddddddddffffffff0d55dddddddd555d01111111111111105111111500000000d66666666666666d
-444444445555555566666666777777772222222255555555ddddddddffffffff0dd55dddddddd55d50000000000000005111111500000000d66666666666666d
-444444445555555566666666777777772222222255555555ddddddddffffffff0ddd555ddddddddd11101115551101105111111500000000d66666666666666d
-444444445555555566666666777777772222222255555555ddddddddffffffff05ddd55ddddddddd10000000000000005111111500000000d66666666666666d
-444444445555555566666666777777772222222255555555ddddddddffffffff055ddd55dddddddd06565566666565605111111500000000d66666666666666d
-444444445555555566666666777777772222222255555555ddddddddffffffff0d5ddddddddddd6601111155555111105111111500000000d66666666666666d
-444444445555555566666666777777772222222255555555ddddddddffffffff000000000000000010000000000000005111111500000000d66666666666666d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333000000000000000000000000511111155111111500000000d66666666666666d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333055555555555555555555550511111155111111500000000d66666666666666d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333511111111111111111111115111111155111111500000000d66666666666656d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333511111111111111111111115111111150555555000000000d66666666666565d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333511111111111111111111115111111150000000000000000d66666666666656d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333511111111111111111111115111111150000000000000000d66666666666666d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333511111111111111111111115111111150000000000000000d66666666666666d
-8888888899999999aaaaaaaabbbbbbbb2222222299999999aaaaaaaa33333333511111111111111111111115111155500000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff005000000000000000000500511111150000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff005111111111111111111500511111150000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff005111111111111111111500511111110000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff000555555555555555555000511111110000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff000000000000000000000000511111110000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff000000000000000000000000511111110000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff000000000000000000000000511111110000000000000000d66666666666666d
-ccccccccffffffffffffffffffffffff3333333355555555ffffffffffffffff000000000000000000000000055511110000000000000000dddddddddddddddd
+00112233000000000000000000000000000000000000000000055000000000005000000000000005000000000000000000000000000000000000000000000000
+0011223300000000000000000000000000000000555d6d55555656dd555d6d5556dd555d6d555556055555555555555055dddd55000000000000000000000000
+4455667700000000000000000000000000000000d555ddd555560dddd555ddd50dddd555ddd55556011111111111111055555555000000000000000000000000
+4455667700000000000000000000000000000000dd555ddd555d0ddddd555ddd0ddddd555ddd555d015000000000051051111115000000000000000000000000
+8899aabb00000000000000000000000000000000ddd555ddd5550dddddd555dd0dddddd555ddd555015066066060051051111115000000000000000000000000
+8899aabb00000000000000000000000000000000dddd5551111111111ddd555d0ddddddd555ddd5d015000000000051051111115000000000000000000000000
+ccddeeff00000000000000000000000000000000dddd1111115115111111d5550dddddddd555dddd015066666066051051111115000000000000000000000000
+ccddeeff00000000000000000000000000000000dd111111111551111111115505dddddddd555ddd015000000000051051111115000000000000000000000000
+0011111100000000000000000000000000000000dd11111115511551111111d5055dddddddd555d601555555555555105111111500000000dddddddddddddddd
+0011111100000000000000000000000000000000d1111115115115115111111d0d55dddddddd555d01111111111111105111111500000000d66666666666666d
+2255ddff0000000000000000000000000000000051221111151111511111221d0dd55dddddddd55d50000000000000005111111500000000d66666666666666d
+2255ddff0000000000000000000000000000000051112221111111111222111d0ddd555ddddddddd11101115551101105111111500000000d66666666666666d
+2299aa3300000000000000000000000000000000d55111122222222221111ddd05ddd55ddddddddd10000000000000005111111500000000d66666666666666d
+2299aa3300000000000000000000000000000000dd55dd11111111111155dddd055ddd55dddddddd06565566666565605111111500000000d66666666666666d
+3355eeee00000000000000000000000000000000dddddddddd660d5ddddddddd0d5ddddddddddd6601111155555111105111111500000000d66666666666666d
+3355eeee00000000000000000000000000000000000000000000000000000000000000000000000010000000000000005111111500000000d66666666666666d
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000511111155111111500000000d66666666666666d
+0000000000000000000000000000000000000000000000000000000000000000555555555555555555555550511111155111111500000000d66666666666666d
+0000000000000000000000000000000000000000000000000000000000000000511111111111111111111115111111155111111500000000d66666666666656d
+000000000000000000000000000000000000000000000000000000000000000051111111111111111111111511111115d555555d00000000d66666666666565d
+0000000000000000000000000000000000000000000000000000000000000000511111111111111111111115111111155ddd55dd00000000d66666666666656d
+00000000000000000000000000000000000000000000000000000000000000005111111111111111111111151111111555ddd55d00000000d66666666666666d
+00000000000000000000000000000000000000000000000000000000000000005111111111111111111111151111111555dddddd00000000d66666666666666d
+0000000000000000000000000000000000000000000000000000000000000000511111111111111111111115111155500000000000000000d66666666666666d
+0000000000000000000000000000000000000000000000000000000000000000055000000000000000000560511111150000000000000000d66666666666666d
+00000000000000000000000000000000000000000000000000000000000000000d51111111111111111115d0511111150000000000000000d66666666666666d
+00000000000000000000000000000000000000000000000000000000000000000d51111111111111111115d0511111110000000000000000d66666666666666d
+00000000000000000000000000000000000000000000000000000000000000000dd555555555555555555dd0511111110000000000000000d66666666666666d
+000000000000000000000000000000000000000000000000000000000000000005ddd5555ddd55ddddddddd0511111110000000000000000d66666666666666d
+0000000000000000000000000000000000000000000000000000000000000000055ddd5555ddd55dddddddd0511111110000000000000000d66666666666666d
+00000000000000000000000000000000000000000000000000000000000000000d5dddd555ddddddddddd660511111110000000000000000d66666666666666d
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000055511110000000000000000dddddddddddddddd
 fffffffffffffffffffffffffffffffffffffffffffffffffffff1fffffffffffffff1fffffffffffffffff1ffffffff00000000000000000000000000000000
 ffffffffffffffffffffffffffffffffffffffffffffffffffff11f111111fffffff111111111fffffffff11f11111ff00000000000000000000000000000000
 ffffffffffffffffffffffffffffffffffffffffffffffffff1111111111fffffff11111111111ffffff1111111111ff00000000000000000000000000000000
@@ -747,8 +1015,8 @@ __map__
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000a0b00000a0b00000a0b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0028291a1b29291a1b29291a1b292a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00383939393939393939393939393a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0928291a1b29291a1b29291a1b292a0800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+19383939393939393939393939393a1800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0c08090809080908090809080908090c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 1c18191819181918191819181918191c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 1c08090809080908090809080908091c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -761,3 +1029,6 @@ __map__
 1c18191819181918191819181918191c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 3b29292929292929292929292929292b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 3839393939393939393939393939393a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__sfx__
+000600000605001050060500305018000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+090600000305007050040500605003050060520605600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
