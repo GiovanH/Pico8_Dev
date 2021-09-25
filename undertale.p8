@@ -7,13 +7,150 @@ __lua__
 -- global vars
 local todo
 
-local debug = true
- menuitem(1,'toggle debug',
-   function() debug = not debug end)
+local debug = true -- (stat(6) == 'debug')
+if (debug) menuitem(5,'toggle debug',function() debug = not debug end)
+
+dbg=(function()
+ poke(0x5f2d, 1)
+ local vars,sy={},0
+ local mx,my,mb,pb,click,mw,exp,x,y
+ function butn(exp,x,y)
+  local hover=mx>=x and mx<x+4 and my>=y and my<y+6
+  print(exp and "-" or "+",x,y,hover and 7 or 5)
+  return hover and click
+ end
+ function inspect(v,d)
+  d=d or 0
+  local t=type(v)  
+  if t=="table" then
+   if(d>5)return "[table]"
+   local props={}
+   for key,val in pairs(v) do
+    props[key]=inspect(val,d+1)
+   end
+   return {
+    expand=false,
+    props=props
+   }
+  elseif t=="string" then
+   return chr(34)..v..chr(34)
+  elseif t=="boolean" then
+   return v and "true" or "false"
+  elseif t=="nil" or t=="function" or t=="thread" then
+   return "["..t.."]"
+  else 
+   return ""..v
+  end
+ end
+ function drawvar(var,name)
+  if type(var)=="string" then  
+   print(name..":",x+4,y,6)
+   print(var,x+#(""..name)*4+8,y,7)
+   y+=6
+  else
+   -- expand button
+   if(butn(var.expand,x,y))var.expand=not var.expand
+   -- name
+   print(name,x+4,y,12) y+=6
+   -- content
+   if var.expand then
+    x+=2
+    for key,val in pairs(var.props) do
+     drawvar(val,key)    
+    end
+    x-=2
+   end
+  end
+ end
+ function copyuistate(src,dst)
+  if type(src)=="table" and type(dst)=="table" then
+   dst.expand=src.expand
+   for key,val in pairs(src.props) do
+    copyuistate(val,dst.props[key])
+   end
+  end
+ end
+ function watch(var,name)
+  name=name or "[var]"
+  local p,i=vars[name],inspect(var)
+  if(p)copyuistate(p,i)
+  vars[name]=i
+ end 
+ function clear()
+  vars={}
+ end 
+ function draw(dx,dy,w,h)
+  dx=dx or 0
+  dy=dy or 48
+  w=w or 128-dx
+  h=h or 128-dy
+  -- collapsed mode
+  if not exp then
+   dx+=w-10
+   w,h=10,5
+  end
+  -- window
+  clip(dx,dy,w,h)
+  rectfill(0,0,128,128,1)
+  x=dx+2 y=dy+2-sy
+
+  -- read mouse
+  mx,my,mw=stat(32),stat(33),stat(36)
+  mb=band(stat(34),1)~=0
+  click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
+  pb=mb
+
+  if exp then  
+
+   -- variables       
+   for k,v in pairs(vars) do
+    drawvar(v,k)
+   end
+
+   -- scrolling
+   local sh=y+sy-dy
+   sy=max(min(sy-mw*8,sh-h),0)
+  end
+
+  -- expand/collapse btn
+  if(butn(exp,dx+w-10,dy))exp=not exp
+
+  -- draw mouse ptr
+  clip()    
+  line(mx,my,mx,my+2,8)
+  color(7) 
+ end
+
+ function show()
+  exp=true
+  while exp do
+   draw()
+   flip()
+  end
+ end
+
+ function prnt(v,name)
+  watch(v,name)
+  show()
+ end
+
+ return{
+  watch=watch,
+  clear=clear,
+  expand=function(val)
+   if(val~=nil)exp=val
+   return exp
+  end,
+  draw=draw,
+  show=show,
+  print=prnt
+ }
+end)()
+
 -->8
 -- utility
 
--- dumptable
+-- any to string (dumptable)
 function tostring(any)
  if (type(any)~="table") return tostr(any)
  local str = "{"
@@ -32,6 +169,7 @@ function printa(...)
  printh(s)
 end
 
+-- multiple return concatenation
 function mrconcat(t, ...)
  for i, v in ipairs({...}) do
   add(t, v)
@@ -118,10 +256,11 @@ end
 function bbox:shift(v)
  self.origin += v
  self:init(self.origin, self.size)
+ return self
 end
 function bbox:unpack() return self.x0, self.y0, self.x1, self.y1 end
 function bbox:overlaps(other)
- return self.x0 < other.x1 and other.x0 < self.x1 and self.y0 < other.y1 and other.y0 < self.y1
+ return self.x0 <= other.x1 and other.x0 <= self.x1 and self.y0 <= other.y1 and other.y0 <= self.y1
 end
 function bbox:within(other)
  return self.x0 > other.x0 and self.x1 < other.x1 and self.y0 > other.y0 and self.y1 < other.y1
@@ -158,11 +297,13 @@ local actor = obj:extend{
  z = 0,
  age = -1,
  ttl = nil,
+ -- anch: offset between
+ -- bounding box and
+ -- pos (top left)
  anchor = vec()
 }
 function actor:init(pos)
  self.pos = pos
- printa('a', self.pos)
 end
 function actor:update()
  self.age += 1
@@ -173,7 +314,9 @@ end
 function actor:destroy() self._doomed = true end
 
 local mob = actor:extend{
- size = vec(7,7)
+ size = vec(7,7),
+ anim = nil,
+ frame_len = 1
 }
 function mob:init(pos, ...)
  self.spr, self.size = ...
@@ -191,8 +334,32 @@ function mob:update()
  )
 end
 function mob:draw()
- spr(self.spr, self.pos:unpack())
- if (debug) rect(mrconcat({self.shape:unpack()}, 13))
+ -- caching unpack saves tokens
+ local spx, spy = self.pos:unpack()
+ local spw, sph = self.size:unpack()
+ spw, sph = ceil(spw/8), ceil(sph/8)
+ -- anim is a list of frames to loop
+ -- frames are sprite ids
+ if self.anim then 
+  local findex = (flr(self.stage.mclock/self.frame_len) % #self.anim) +1
+  local frame = self.anim[findex]
+  self._frame, self._findex = frame, findex
+  
+  -- printh(tostring({i=findex, s=self.name, a=self.anim, f=frame}))
+  -- if type(frame) == "function"
+  --  frame()  
+  -- else
+   if (frame != false) spr(frame, spx, spy, spw, sph)
+  -- end
+ else
+  spr(self.spr, spx, spy, spw, sph)
+ end
+ if debug then 
+  -- print bbox and anchor/origin
+  rect(mrconcat({self.shape:unpack()}, 13))
+  line(spx, spy, 
+   mrconcat({(self.pos - self.anchor):unpack()}, 4))
+ end
 end
 
 local particle = actor:extend{}
@@ -212,40 +379,41 @@ end
 -- stage
 local stage = obj:extend{}
 function stage:init()
- self.actors = {}
+ self.objects = {}
  self.mclock = 0
  self.camera = vec()  -- use for map offset
 end
-function stage:add(actor)
- add(self.actors, actor)
- actor.stage = self
+function stage:add(object)
+ add(self.objects, object)
+ object.stage = self
 end
 function stage:_zsort()
- sort(self.actors, function(a) return a.z end)
+ sort(self.objects, function(a) return a.z end)
 end
 function stage:update()
- for actor in all(self.actors) do
-  if actor._doomed then
+ for object in all(self.objects) do
+  if object._doomed then
    -- clean up garbage
-   del(self.actors, actor)
-   actor.stage = nil
+   del(self.objects, object)
+   object.stage = nil
   else
-   actor:update()
+   object:update()
   end
  end
  self.mclock = (self.mclock + 1) % 27720
 end
 function stage:draw()
  self:_zsort()
- for actor in all(self.actors) do
-  if (not actor._doomed) actor:draw()
+ for object in all(self.objects) do
+  if (not object._doomed) object:draw()
  end
 end
 
 -->8
 -- game classes
 
-local o_soul = mob(vec(64, 64), 0)
+local o_soul = mob(vec(64, 64), 0, vec(7,7))
+o_soul.name = 'soul'
 o_soul.arena = nil
 o_soul.invuln = 0
 function o_soul:update()
