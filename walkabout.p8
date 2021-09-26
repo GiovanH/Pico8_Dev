@@ -285,6 +285,7 @@ function bbox:shift(v)
 end
 function bbox:unpack() return self.x0, self.y0, self.x1, self.y1 end
 function bbox:overlaps(other)
+ if (other == nil) return false
  return self.x0 <= other.x1 and other.x0 <= self.x1 and self.y0 <= other.y1 and other.y0 <= self.y1
 end
 function bbox:within(other)
@@ -347,7 +348,7 @@ function actor:update()
  if self.ttl and self.age >= self.ttl then
   self:destroy()
  end
- -- camera perspective
+ -- domain: camera perspective
  self.z = self.pos.y
 end
 function actor:destroy() self._doomed = true end
@@ -423,9 +424,9 @@ function particle:init(pos, ...)
  self.vel, self.acc, self.ttl, self.col, self.z = ...
 end
 function particle:update()
- actor.update(self)
  self.vel += self.acc
  self.pos += self.vel
+ actor.update(self)
 end
 function particle:draw()
  pset(self.pos.x, self.pos.y, self.col)
@@ -733,6 +734,23 @@ function newportal(pos, dest, deststate)
   sfx(001)
   printh('portalled player to')
   printh(o_player.stage:relpos(o_player))
+
+  local grav = vec(0, 0.01)
+  for i = 0, 24 do
+   local spread = 8
+   local p = particle(
+     o_player.stage:relpos(o_player) + vec(rndr(-spread, spread), 4),
+     vec(rndr(-0.5, 0.5), rndr(-2.1, -1.7)), --vel
+     grav, -- acc
+     rndr(10, 15), -- ttl
+     7 -- col
+    )
+   function p:update()
+    particle.update(self)
+    self.z += (self.age)*4
+   end
+   cur_room:add(p)
+  end
  end
  return o_portal
 end
@@ -1080,6 +1098,20 @@ function room_hallway(v)
  o_player = t_player(v or vec(14, 72))
  cur_room:add(o_player)
 
+ greydoor = t_sign(vec(120, 32), 030, vec(15, 23))
+ function greydoor:interact(player)
+  if self.talkedto < 1 then
+   self.lines = {
+    "iT'S LOCKED. yOU CAN'T OPEN IT. oR, IT'S NOT LOCKED, AND YOU COULD OPEN THE DOOR. oR MAYBE SOMETHING ELSE. iS IT EVEN A DOOR?",
+    "yOU DON'T OPEN IT."
+   }
+  else
+   self.lines = {"tHE DOOR REEKS OF INDETERMINISM. "}
+  end
+  t_sign.interact(self, player)
+ end
+ cur_room:add(greydoor)
+
  cur_room:add(newtrig(vec(0, 56), vec(8, 31), room_lab, {
     facing='l',
     pos=vec(115, 208)
@@ -1192,7 +1224,6 @@ function room_roof(v)
  o_stair_rail.obstructs = true
  cur_room:add(o_stair_rail)
 
-
  o_pogo = t_sign(vec(96, 22), 078, vec(15, 15))
  o_pogo.bsize = vec(7,7)
  o_pogo.obstructs = true
@@ -1245,7 +1276,6 @@ end
 function _init()
  prettify_map()
  room_complab()
- room_turbine()
 end
 
 function _update()
