@@ -9,14 +9,17 @@ __lua__
 -- todo add a choice menu to dialoger
 -- global "tile vector" for quick grid multiplication
 -- pico-8 coroutines, seriously
+-- TODO interactive debugger extended class support
 
 -- global vars
-
-local debug = true  -- (stat(6) == 'debug')
 local o_player
+local debug = true  -- (stat(6) == 'debug')
+
+-- game state flags
 local speedshoes = false
 local godshoes = false
 
+-- defined sprite flags
 local flag_walkable = 0b1
 
 -->8
@@ -25,6 +28,396 @@ local flag_walkable = 0b1
 if (debug) menuitem(5,'toggle debug',function() debug = not debug end)
 if (debug) menuitem(4,'toggle airshoes',function() godshoes = not godshoes end)
 
+-- Focus stack
+-- Use this to keep track of what
+-- player input should be influencing.
+-- Global because dialog/others are global.
+-- get(), push(v), pop(expected)
+local focus = {}
+function focus:get() return self[#self] end
+function focus:is(q) return self:get() == q end
+function focus:isnt(q) return self:get() != q end
+function focus:push(s) add(self, s) end
+function focus:pop(expected)
+ local r = deli(self)
+ if (expected) assert(expected == r, "popped '" .. r .. "', not " .. expected)
+ return r
+end
+
+-- any to string (dumptable)
+function tostring(any)
+ if (type(any)~="table") return tostr(any)
+ if (any.__tostring) return any:__tostring()
+ local str = "{"
+ for k,v in pairs(any) do
+  if (str~="{") str=str..","
+  str=str..tostring(k).."="..tostring(v)
+ end
+ return str.."}"
+end
+
+-- print all arguments
+function printa(...)
+ local args={...}  -- becomes a table of arguments
+ s = ""
+ foreach(args, function(a) s = s..','..tostring(a) end)
+ printh(s)
+end
+
+-- multiple return concatenation
+-- > mrc({1, 2}, 3) = 1, 2, 3
+function mrconcat(t, ...)
+ for i, v in ipairs({...}) do
+  add(t, v)
+ end
+ return unpack(t)
+end
+
+-- reset with one transparent color
+function paltt(t)
+ palt()
+ palt(0, false)
+ palt(t, true)
+end
+
+-- random in range [a, b]
+function rndr(a, b) return rnd(b - a) + a end
+
+-- random int [0, n)
+function rndi(n) return flr(rnd(n)) end
+
+--- sort list by keyfunc
+function sort(list, keyfunc)
+ for i = 2, #list do
+  for j = i, 2, -1 do
+   if keyfunc(list[j-1]) > keyfunc(list[j]) then
+    list[j], list[j-1] = list[j-1], list[j]
+   else
+    break
+   end
+  end
+ end
+end
+
+-- clamp query between min/max
+function clamp(min_, query, max_)
+ return min(max_, max(min_, query))
+end
+
+-- print with shadow (optionally center)
+local function prints(s, x, y, c1, c2, center)
+ local screen_width = 128
+ if (center) x = (screen_width - (#s * 4)) / 2
+ print(s, x, y+1, c2 or 1)
+ print(s, x, y, c1 or 7)
+end
+
+--yield xn
+local function yieldn(n)
+ for i=1,n do
+  yield()
+ end
+end
+
+-- simple oo
+local function nop() end
+local obj = {init = nop}
+obj.__index = obj
+function obj:__call(...)
+ local o = setmetatable({}, self)
+ return o, o:init(...)
+end
+function obj:extend(proto)
+ proto = proto or {}
+ -- copy meta values, since lua doesn't walk the prototype chain to find them
+ for k, v in pairs(self) do
+  if sub(k, 1, 2) == "__" then
+   proto[k] = v
+  end
+ end
+ proto.__index = proto
+ proto.__super = self
+ return setmetatable(proto, self)
+end
+
+-->8
+-- stage classes
+
+-- 2d vector
+-- self ops: clone, unpack
+-- vector ops: +, -, elemx()
+-- scalar ops: *
+local vec = obj:extend{}
+function vec:init(x, y)
+ self.x, self.y =
+ x or 0, y or x or 0
+end
+function vec:clone() return vec(self:unpack()) end
+function vec:__add(v) return vec(self.x + v.x, self.y + v.y) end
+function vec:__sub(v) return vec(self.x - v.x, self.y - v.y) end
+function vec:__mul(n) return vec(self.x * n, self.y * n) end
+function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
+function vec:unpack() return self.x, self.y end
+function vec:elemx(v)
+ -- product w/ vector
+ return vec(self.x * v.x, self.y * v.y)
+end
+
+local vec_spritesize = vec(7,7)
+
+-- 2d bounding box
+-- self ops: clone, unpack, center (get)
+-- bbox ops: overlaps, within
+-- scalar ops: *, outline, shift, grow
+--  * multiplies size and origin
+--  grow multiplies size only
+-- vector ops:
+--  maptiles(offset) (get all touching map tiles w/ info)
+--  shift (move origin by v)
+local bbox = obj:extend{}
+function bbox:init(origin, size)
+ self.origin, self.size = origin, size
+ local corner = origin + size
+ self.x0, self.y0,
+ self.x1, self.y1,
+ self.w, self.h =
+ origin.x, origin.y,
+ corner.x, corner.y,
+ size:unpack()
+end
+function bbox:shift(v) return bbox(self.origin+b, self.size) end
+function bbox:clone() return bbox(self.origin:unpack(), self.size.unpack()) end
+function bbox:unpack() return self.x0, self.y0, self.x1, self.y1 end
+function bbox:overlaps(other)
+ if (other == nil) return false
+ return self.x0 <= other.x1 and other.x0 <= self.x1 and self.y0 <= other.y1 and other.y0 <= self.y1
+end
+function bbox:within(other)
+ return self.x0 > other.x0 and self.x1 < other.x1 and self.y0 > other.y0 and self.y1 < other.y1
+end
+function bbox:outline(w)
+ local vw = vec(w, w)
+ return bbox(
+  self.origin - vw,
+  self.size + vw*2
+ )
+end
+function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
+function bbox:grow(n) return bbox(self.origin, self.size*n) end
+function bbox:center()
+ return self.origin + self.size*(1/2)
+end
+-- function bbox:itermap()
+--  -- todo document this
+--  local x0 = flr(self.x0)
+--  local x, y = x0 - 1, flr(self.y0)
+--  return function()
+--   x += 1
+--   if x >= self.x1 then
+--    x = x0
+--    y += 1
+--    if (y >= self.y1) return
+--   end
+--   return x, y, mget(x, y)
+--  end
+-- end
+function bbox:maptiles(offset)
+ if (offset == nil) offset = vec(0, 0)
+ local ox, oy = offset:unpack()
+ local tiles = {}
+ for x = flr(self.x0/8), flr(self.x1/8) do
+  for y = flr(self.y0/8), flr(self.y1/8) do
+   -- dbg.print({x+ox, y+oy})
+   local tpos = vec(x+ox, y+oy)
+   local i = mget(tpos:unpack())
+   add(tiles, {spr=i, flags=fget(i), pos=tpos})
+  end
+ end
+ printh(tostring(tiles))
+ return tiles
+end
+
+local box_screen = bbox(vec(0, 0), vec(128, 128))
+
+-- actors
+-- [1]pos: main position
+-- draw: draw function (or nop)
+-- z: draw order
+-- z_is_y: auto set z to pos.y
+-- ttl: self-destroy after n ticks if set
+local actor = obj:extend{
+ draw = nop,
+ stage = nil,
+ z = 0,
+ ttl = nil,
+ z_is_y = true,  -- domain: camera perspective
+}
+function actor:init(pos)
+ self.pos = pos
+end
+function actor:update()
+ if self.ttl then
+  self.ttl -= 1
+  if (self.ttl < 1) self:destroy()
+ end
+ if (self.z_is_y) self.z = self.pos.y
+end
+function actor:destroy() self._doomed = true end
+
+-- mob
+-- [1]pos: main position
+-- [2]spr: sprite top-left corner
+-- [3]size: size of sprite area to draw
+-- shape_offset: vector from pos to shape
+-- anchor: vector from pos to sprite
+-- anim: table of frames to repeat instead of spr
+-- frame_len: how long to show each frame in anim
+-- flipx, flipy: sprite flip booleans
+-- paltab: pallette replacement table (opt)
+-- tcol: color # to mark as transparent
+-- get_hitbox(v): hitbox is self.pos were v
+local mob = actor:extend{
+ size = vec_spritesize,
+ anchor = vec(0,0),
+ shape_offset = vec(0,0),
+ anim = nil,
+ frame_len = 1,
+ flipx = false,
+ flipy = false,
+ tcol = nil,
+ paltab = nil
+}
+function mob:init(pos, ...)
+ self.spr, self.size = ...
+ actor.init(self, pos)
+ self.bsize = self.size
+end
+function mob:update()
+ actor.update(self)
+ self.shape = self:get_hitbox(self.pos)
+end
+function mob:get_hitbox(pos)
+ return bbox(
+  pos + self.shape_offset,
+  self.bsize
+ )
+end
+function mob:draw()
+ -- if self.spr or self.afnim then
+ if (self.tcol != nil) paltt(self.tcol)
+ if (self.paltab) pal(self.paltab)
+ -- caching unpack saves tokens
+ local temp = (self.pos + self.anchor)  -- picotool :(
+ local spx, spy = temp:unpack()
+ local spw, sph = self.size:unpack()
+ spw, sph = ceil(spw/8), ceil(sph/8)
+ -- anim is a list of frames to loop
+ -- frames are sprite ids
+ if self.anim then
+  local mclock = self.ttl or self.stage.mclock
+  local findex = (flr(mclock/self.frame_len) % #self.anim) +1
+  local frame = self.anim[findex]
+  self._frame, self._findex = frame, findex
+
+  -- printh(tostring({i=findex, s=self.name, a=self.anim, f=frame}))
+  -- if type(frame) == "function"
+  --  frame()
+  -- else
+  if (frame != false) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
+ else
+  if (self.spr != nil and self.spr != false) spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
+ end
+ -- end
+ if debug then
+  -- print bbox and anchor/origin
+  rect(mrconcat({self.shape:unpack()}, 2))
+  line(spx, spy,
+   mrconcat({self.pos:unpack()}, 4))
+  pset(spx, spy, 5)
+ end
+ if (self.paltab) pal()
+end
+
+-- particle
+-- pos, vel, acc, ttl, col, z
+local particle = actor:extend{}
+function particle:init(pos, ...)
+ actor.init(self, pos)
+ self.vel, self.acc, self.ttl, self.col, self.z = ...
+end
+function particle:update()
+ self.vel += self.acc
+ self.pos += self.vel
+ actor.update(self)
+end
+function particle:draw()
+ pset(self.pos.x, self.pos.y, self.col)
+end
+
+-- stage
+-- updates and draws all contained objects in order
+-- tracks and executes asynchronous tasks
+-- :add(object) to add object
+--  objects can have only one stage at a time
+-- :schedule(tics, callback) to execute callback in # ticks
+-- mclock is highly composite modulo clock
+-- % 1-15, 18, 20, 21-22, 24, 28...
+local stage = obj:extend{}
+function stage:init()
+ self.objects = {}
+ self.mclock = 0
+ self.camera = vec()  -- use for map offset
+ self._tasks = {}
+end
+function stage:add(object)
+ add(self.objects, object)
+ -- if (object.stage) del(object.stage.objects, object)
+ object.stage = self
+end
+function stage:_zsort()
+ sort(self.objects, function(a) return a.z end)
+end
+function stage:update()
+ -- Update clock
+ self.mclock = (self.mclock + 1) % 27720
+ -- Update tasks
+ dbg.watch(self._tasks, "tasks")
+ for handle, task in pairs(self._tasks) do
+  task.ttl -= 1
+  if task.ttl <= 0 then
+   task.callback()
+   self._tasks[handle] = nil
+  end
+ end
+ -- Update objects
+ for object in all(self.objects) do
+  if object._doomed then
+   -- clean up garbage
+   del(self.objects, object)
+   object.stage = nil
+  else
+   object:update()
+  end
+ end
+end
+function stage:draw()
+ self:_zsort()
+ for object in all(self.objects) do
+  if (not object._doomed) object:draw()
+ end
+end
+function stage:schedule(tics, callback)
+ add(self._tasks, {
+   ttl = tics,
+   callback = callback,
+  })
+end
+
+-->8
+-- game utility
+
+-- Interactive debugger
+-- based on work by mot ?tid=37822
 dbg=function()
  poke(0x5f2d, 1)
  local vars,sy={},0
@@ -65,10 +458,8 @@ dbg=function()
   else
    -- expand button
    if(butn(var.expand,x,y))var.expand=not var.expand
-   -- name
    print(name,x+4,y,12) y+=6
-   -- content
-   if var.expand then
+   if var.expand then  -- content
     x+=2
     for key,val in pairs(var.props) do
      drawvar(val,key)
@@ -106,7 +497,8 @@ dbg=function()
   end
   -- window
   clip(dx,dy,w,h)
-  rectfill(0,0,128,128,1)
+  color(1)
+  rectfill(box_screen:unpack())
   x=dx+2 y=dy+2-sy
 
   -- read mouse
@@ -116,26 +508,21 @@ dbg=function()
   pb=mb
 
   if exp then
-
    -- variables
    for k,v in pairs(vars) do
     drawvar(v,k)
    end
-
    -- scrolling
    local sh=y+sy-dy
    sy=max(min(sy-mw*8,sh-h),0)
   end
-
   -- expand/collapse btn
   if(butn(exp,dx+w-10,dy))exp=not exp
-
   -- draw mouse ptr
   clip()
   line(mx,my,mx,my+2,8)
   color(7)
  end
-
  function show()
   exp=true
   while exp do
@@ -143,7 +530,6 @@ dbg=function()
    flip()
   end
  end
-
  function prnt(v,name)
   watch(v,name)
   show()
@@ -163,338 +549,10 @@ dbg=function()
 end
 dbg = dbg()
 
--- any to string (dumptable)
-function tostring(any)
- if (type(any)~="table") return tostr(any)
- local str = "{"
- for k,v in pairs(any) do
-  if (str~="{") str=str..","
-  str=str..tostring(k).."="..tostring(v)
- end
- return str.."}"
-end
-
--- print all arguments
-function printa(...)
- local args={...}  -- becomes a table of arguments
- s = ""
- foreach(args, function(a) s = s..','..tostring(a) end)
- printh(s)
-end
-
--- multiple return concatenation
-function mrconcat(t, ...)
- for i, v in ipairs({...}) do
-  add(t, v)
- end
- return unpack(t)
-end
-
--- reset with one transparent color
-function paltt(t)
- palt()
- palt(0, false)
- palt(t, true)
-end
-
--- random in range
-function rndr(a, b) return rnd(b - a) + a end
-
--- random int
-function rndi(n) return flr(rnd(n)) end
-
-function sort(list, keyfunc)
- for i = 2, #list do
-  for j = i, 2, -1 do
-   if keyfunc(list[j-1]) > keyfunc(list[j]) then
-    list[j], list[j-1] = list[j-1], list[j]
-   else
-    break
-   end
-  end
- end
-end
-
-function clamp(min_, query, max_)
- return min(max_, max(min_, query))
-end
-
--- print with shadow
-local function prints(s, x, y, c1, c2)
- print(s, x, y+1, c2 or 1)
- print(s, x, y, c1 or 7)
-end
-
---yield xn
-local function yieldn(n)
- for i=1,n do
-  yield()
- end
-end
-
--- simple oo
-local function nop() end
-local obj = {init = nop}
-obj.__index = obj
-function obj:__call(...)
- local o = setmetatable({}, self)
- return o, o:init(...)
-end
-function obj:extend(proto)
- proto = proto or {}
- -- copy meta values, since lua doesn't walk the prototype chain to find them
- for k, v in pairs(self) do
-  if sub(k, 1, 2) == "__" then
-   proto[k] = v
-  end
- end
- proto.__index = proto
- proto.__super = self
- return setmetatable(proto, self)
-end
-
--->8
--- stage classes
-
-local vec = obj:extend{}
-function vec:init(x, y)
- self.x, self.y =
- x or 0, y or x or 0
-end
-function vec:clone() return vec(self.x, self.y) end
-function vec:__add(v) return vec(self.x + v.x, self.y + v.y) end
-function vec:__sub(v) return vec(self.x - v.x, self.y - v.y) end
-function vec:__mul(n) return vec(self.x * n, self.y * n) end
-function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
-function vec:unpack() return self.x, self.y end
-function vec:elemx(v)
- -- product w/ vector
- return vec(self.x * v.x, self.y * v.y)
-end
-
-local bbox = obj:extend{}
-function bbox:init(origin, size)
- self.origin, self.size = origin, size
- local corner = origin + size
- self.x0, self.y0,
- self.x1, self.y1,
- self.w, self.h =
- origin.x, origin.y,
- corner.x, corner.y,
- size:unpack()
-end
-function bbox:shift(v)
- self.origin += v
- self:init(self.origin, self.size)
- return self
-end
-function bbox:unpack() return self.x0, self.y0, self.x1, self.y1 end
-function bbox:overlaps(other)
- if (other == nil) return false
- return self.x0 <= other.x1 and other.x0 <= self.x1 and self.y0 <= other.y1 and other.y0 <= self.y1
-end
-function bbox:within(other)
- return self.x0 > other.x0 and self.x1 < other.x1 and self.y0 > other.y0 and self.y1 < other.y1
-end
-function bbox:outline(w)
- local vw = vec(w, w)
- return bbox(
-  self.origin - vw,
-  self.size + vw*2
- )
-end
-function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
-function bbox:center()
- return self.origin + self.size*(1/2)
-end
--- function bbox:itermap()
---  -- todo document this
---  local x0 = flr(self.x0)
---  local x, y = x0 - 1, flr(self.y0)
---  return function()
---   x += 1
---   if x >= self.x1 then
---    x = x0
---    y += 1
---    if (y >= self.y1) return
---   end
---   return x, y, mget(x, y)
---  end
--- end
-function bbox:maptiles(offset)
- if (offset == nil) offset = vec(0, 0)
- local ox, oy = offset:unpack()
- local tiles = {}
- for x = flr(self.x0/8), flr(self.x1/8) do
-  for y = flr(self.y0/8), flr(self.y1/8) do
-   -- dbg.print({x+ox, y+oy})
-   local tpos = vec(x+ox, y+oy)
-   local i = mget(tpos:unpack())
-   add(tiles, {spr=i, flags=fget(i), pos=tpos})
-  end
- end
- printh(tostring(tiles))
- return tiles
-end
-
--- actors
-local actor = obj:extend{
- draw = nop,
- stage = nil,
- z = 0,
- age = -1,
- ttl = nil,
- -- anch: offset between
- -- bounding box and
- -- pos (top left)
- anchor = vec()
-}
-function actor:init(pos)
- self.pos = pos
-end
-function actor:update()
- self.age = (self.age + 1) % 27720
- if self.ttl and self.age >= self.ttl then
-  self:destroy()
- end
- -- domain: camera perspective
- self.z = self.pos.y
-end
-function actor:destroy() self._doomed = true end
-
-local mob = actor:extend{
- size = vec(7,7),
- anchor = vec(0,0),
- anim = nil,
- frame_len = 1,
- flipx = false,
- flipy = false,
- tcol = nil,
- paltab = nil,
- shape_offset = vec(0,0)
-}
-function mob:init(pos, ...)
- self.spr, self.size = ...
- actor.init(self, pos)
- self.bsize = self.size
- self.shape = bbox(
-  self.pos,
-  self.bsize
- )
-end
-function mob:update()
- actor.update(self)
- self.shape = self:get_hitbox(self.pos)
-end
-function mob:get_hitbox(pos)
- return bbox(
-  pos + self.shape_offset,
-  self.bsize
- )
-end
-function mob:draw()
- -- if self.spr or self.afnim then
- if (self.tcol != nil) paltt(self.tcol)
- if (self.paltab) pal(self.paltab)
- -- caching unpack saves tokens
- local temp = (self.pos + self.anchor)  -- picotool :(
- local spx, spy = temp:unpack()
- local spw, sph = self.size:unpack()
- spw, sph = ceil(spw/8), ceil(sph/8)
- -- anim is a list of frames to loop
- -- frames are sprite ids
- if self.anim then
-  local findex = (flr(self.age/self.frame_len) % #self.anim) +1
-  local frame = self.anim[findex]
-  self._frame, self._findex = frame, findex
-
-  -- printh(tostring({i=findex, s=self.name, a=self.anim, f=frame}))
-  -- if type(frame) == "function"
-  --  frame()
-  -- else
-  if (frame != false) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
- else
-  if (self.spr != nil and self.spr != false) spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
- end
- -- end
- if debug then
-  -- print bbox and anchor/origin
-  rect(mrconcat({self.shape:unpack()}, 2))
-  line(spx, spy,
-   mrconcat({self.pos:unpack()}, 4))
-  pset(spx, spy, 5)
- end
- if (self.paltab) pal()
-end
-
-local particle = actor:extend{}
-function particle:init(pos, ...)
- actor.init(self, pos)
- self.vel, self.acc, self.ttl, self.col, self.z = ...
-end
-function particle:update()
- self.vel += self.acc
- self.pos += self.vel
- actor.update(self)
-end
-function particle:draw()
- pset(self.pos.x, self.pos.y, self.col)
-end
-
--- stage
-local stage = obj:extend{}
-function stage:init()
- self.objects = {}
- self.mclock = 0
- self.camera = vec()  -- use for map offset
- self._tasks = {}
-end
-function stage:add(object)
- add(self.objects, object)
- -- if (object.stage) del(object.stage.objects, object)
- object.stage = self
-end
-function stage:_zsort()
- sort(self.objects, function(a) return a.z end)
-end
-function stage:update()
- self.mclock = (self.mclock + 1) % 27720
- dbg.watch(self._tasks, "tasks")
- for handle, task in pairs(self._tasks) do
-  task.ttl -= 1
-  if task.ttl <= 0 then
-   task.callback()
-   self._tasks[handle] = nil
-  end
- end
- for object in all(self.objects) do
-  if object._doomed then
-   -- clean up garbage
-   del(self.objects, object)
-   object.stage = nil
-  else
-   object:update()
-  end
- end
-end
-function stage:draw()
- self:_zsort()
- for object in all(self.objects) do
-  if (not object._doomed) object:draw()
- end
-end
-function stage:schedule(tics, callback)
- add(self._tasks, {
-  ttl = tics,
-  callback = callback,
- })
-end
-
--->8
--- game utility
-
 -- dialog box
--- by rusty bailey
+-- based on work by rustybailey
+
+-- todo replace prefix with options table
 
 dialoger = {
  x = 8,
@@ -515,6 +573,7 @@ dialoger = {
    })
 
   if (#self.queue == 1) then
+   focus:push('dialog')
    self:trigger(self.queue[1].message, self.queue[1].prefix)
   end
  end,
@@ -637,6 +696,8 @@ dialoger = {
    if (#self.queue > 0) then
     self:trigger(self.queue[1].message, self.queue[1].prefix)
     coresume(self.animation_loop, self)
+   else
+    focus:pop('dialog')
    end
   end
 
@@ -725,7 +786,7 @@ function t_npc:draw()
  self.flipx = (self.facing == 'l')
  local facemap = {d=0, u=2, l=4, r=4}
  self.spr = self.spr0 + facemap[self.facing]
- if self.ismoving and self.age % 8 < 4 then
+ if self.ismoving and self.stage.mclock % 8 < 4 then
   self.anchor = vec(0, -15)
  else
   self.anchor = vec(0, -16)
@@ -754,15 +815,15 @@ function newportal(pos, dest, deststate)
     rndr(p_origin.y, p_extent.y)
    )
    local p = particle(
-     point_in_plr_spr + vec(0, 4),
-     vec(rndr(-0.5, 0.5), rndr(-2.0, -1.7)), --vel
-     grav, -- acc
-     rndr(10, 15), -- ttl
-     7 -- col
-    )
+    point_in_plr_spr + vec(0, 4),
+    vec(rndr(-0.5, 0.5), rndr(-2.0, -1.7)),  --vel
+    grav,  -- acc
+    rndr(10, 15),  -- ttl
+    7  -- col
+   )
    function p:update()
     particle.update(self)
-    self.z += (self.age)*4
+    self.z += (15 - self.ttl)*4
    end
    cur_room:add(p)
   end
@@ -775,20 +836,20 @@ function newportal(pos, dest, deststate)
   end
   self:spark()
   p:destroy()
-   sfx(001)
+  sfx(001)
   self.stage:schedule(16, function()
-   -- new room after animation
-   if deststate then
-    dest(deststate.pos)
-    p.facing = deststate.facing
-   else
-    dest()  -- let room decide position
-   end
-   o_player.cooldown = 5
-   cur_room:update()  -- align camera
-   printh('portalled player to')
-   printh(o_player.pos)
-  end)
+    -- new room after animation
+    if deststate then
+     dest(deststate.pos)
+     p.facing = deststate.facing
+    else
+     dest()  -- let room decide position
+    end
+    o_player.cooldown = 5
+    cur_room:update()  -- align camera
+    printh('portalled player to')
+    printh(o_player.pos)
+   end)
  end
  return o_portal
 end
@@ -887,17 +948,18 @@ function t_player:tryinteract()
     -- self just got destroyed so
     -- this doesn't do anything:
     self.justtriggered = true
+   -- what actually matters is
+   -- the init setting here
    end
    break
   end
  end
  self.justtriggered = stillintrigger
  -- try interact
- local facemap = {d=vec(0,1), u=vec(0,-1), l=vec(-1,0), r=vec(1,0)}
+ local facemap = {d=vec(0,1),u=vec(0,-1),l=vec(-1,0),r=vec(1,0)}
  if btnp(4) then
   self.ibox = bbox(
-   self.pos + self.anchor - vec(0, -8) + facemap[self.facing]*8,
-   vec(2,2)*8
+   self.pos + self.anchor - vec(0, -8) + facemap[self.facing]*8, vec_spritesize*2
   )
   for _,obj in pairs(self.stage.objects) do
    if (self.ibox:overlaps(obj.shape) and obj.interact) then
@@ -914,7 +976,7 @@ function t_player:update()
  self.ismoving = false
  if self.cooldown > 0 then
   self.cooldown -= 1
- elseif (#dialoger.queue == 0) then
+ elseif focus:is('player') then
   self:move()
   self:tryinteract()
  end
@@ -928,7 +990,7 @@ function t_player:draw()
  self.flipx = (self.facing == 'l')
  local facemap = {d=0, u=2, l=4, r=4}
  self.spr = self.spr0 + facemap[self.facing]
- if self.ismoving and self.age % 8 < 4 then
+ if self.ismoving and self.stage.mclock % 8 < 4 then
   self.anchor = vec(-8, -23)
  else
   self.anchor = vec(-8, -24)
@@ -968,23 +1030,23 @@ function room:draw()
  map(map_x, map_y, sx, sy, cell_w, cell_h)
  stage.draw(self)
  if debug and btn(5) then
-   for object in all(self.objects) do
-    if object.pos then
-     local a,b = o_player.pos:unpack()
-     local c,d = object.pos:unpack()
-     line(a, b, c, d)
-    end
+  for object in all(self.objects) do
+   if object.pos then
+    local a,b = o_player.pos:unpack()
+    local c,d = object.pos:unpack()
+    line(a, b, c, d)
    end
   end
+ end
 
- camera() -- ui to raw screen coords
+ camera()  -- ui to raw screen coords
  if debug and o_player then
   -- rect(mrconcat({self.box_px:unpack()}, 10))
   local mous = vec(stat(32), stat(33)) + cam - cur_room.box_px.origin
   prints('plr  ' .. tostring(o_player.pos), 0, 0)
   prints('room ' .. tostring(self.box_map.origin), 0, 8)
   prints('mous ' .. tostring(mous), 0, 16)
-  
+
  end
 
 end
@@ -1002,7 +1064,7 @@ function drawgreat(self)
  rect(mrconcat({box:unpack()},13))
  for _,x in pairs({box.x0, box.x1}) do
   for _,y in pairs({box.y0, box.y1}) do
-  pset(x, y, 0)
+   pset(x, y, 0)
   end
  end
 end
@@ -1196,15 +1258,15 @@ function room_stair(v)
  o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
  o_gio:addline("oH. tHERE IS A MAN HERE.")
- o_gio:addline(function() 
-  if speedshoes then
-   dialoger:enqueue("yOU DO NOT GIVE HIM ANYTHING.")
-  else
-   dialoger:enqueue("hE GAVE YOU AN ❎ BUTTON. iN ADDITION TO THE REST.")
-   speedshoes = true
-   sfx(000)
-  end
- end)
+ o_gio:addline(function()
+   if speedshoes then
+    dialoger:enqueue("yOU DO NOT GIVE HIM ANYTHING.")
+   else
+    dialoger:enqueue("hE GAVE YOU AN ❎ BUTTON. iN ADDITION TO THE REST.")
+    speedshoes = true
+    sfx(000)
+   end
+  end)
  -- function o_gio:update()
 
  --  t_npc.update(self)
@@ -1223,8 +1285,8 @@ function room_stair(v)
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
- -- todo through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.
- -- you hear a distant winney.
+-- todo through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.
+-- you hear a distant winney.
 
 end
 
@@ -1238,9 +1300,9 @@ function room_turbine(v)
  cur_room:add(o_great)
 
  cur_room:add(newtrig(vec(16, 124), vec(15, 4), room_stair, {
-   facing='d',
-   pos=vec(24, 121)
-  }))
+    facing='d',
+    pos=vec(24, 121)
+   }))
  cur_room:add(newtrig(vec(124, 32), vec(4, 15), room_roof))
 end
 
@@ -1271,12 +1333,12 @@ function room_roof(v)
  o_pogo:addline("tHANKS TO THE MIRACLE OF DIGITAL TECHNOLOGY, THE POGO RIDE HAS BEEN EFFORTLESSLY PRESERVED TO THE EXACT SPECIFICATIONS OF THE DESIGNER, A FEAT UNHEARD OF IN ANY PREVIOUS ERA.")
  o_pogo:addline("bUT IT DOESN'T WORK ANYMORE.")
  o_pogo:addline(function()
-  o_pogo.draw = mob.draw
-  o_pogo.lines = {"iT SEEMS SOMEONE HAS REPLACED THE RIDE WITH A STILL PHOTO."}
+   o_pogo.draw = mob.draw
+   o_pogo.lines = {"iT SEEMS SOMEONE HAS REPLACED THE RIDE WITH A STILL PHOTO."}
   end)
 
  function o_pogo:draw()
-  if self.age % 32 < 16 then
+  if self.stage.mclock % 32 < 16 then
    self.anchor = vec(-4, -8)
   else
    self.anchor = vec(-4, -7)
@@ -1286,9 +1348,9 @@ function room_roof(v)
  cur_room:add(o_pogo)
 
  cur_room:add(newtrig(vec(8, 88), vec(4, 15), room_turbine, {
-   facing='l',
-   pos=vec(108, 41)
-  }))
+    facing='l',
+    pos=vec(108, 41)
+   }))
 end
 
 function prettify_map()
@@ -1316,6 +1378,7 @@ end
 function _init()
  prettify_map()
  room_lab()
+ focus:push('player')
 end
 
 function _update()
@@ -1325,6 +1388,7 @@ function _update()
  dbg.watch(dialoger,"dialoger")
  dbg.watch(cur_room,"cur_room")
  dbg.watch(o_player,"player")
+ dbg.watch(focus,"focus")
  dbg.watch(cur_room.objects,"objects")
 end
 
@@ -1332,7 +1396,7 @@ function _draw()
 
  pal()
  cur_room:draw()
- if #dialoger.queue > 0 then
+ if focus:is('dialog') then
   dialoger:draw()
  end
  if (debug) dbg.draw()
@@ -1430,6 +1494,7 @@ ffff1fffff1fffffffff1fffff1ffffffffff1ffff1fffffff11111f11111ffffff1111111111fff
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000
+
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1469,3 +1534,131 @@ __map__
 __sfx__
 000600000605001050060500305018000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 090600000305007050040500605003050060520605600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__music__
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+

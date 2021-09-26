@@ -13,148 +13,28 @@ local debug = true  -- (stat(6) == 'debug')
 -- utility
 
 if (debug) menuitem(5,'toggle debug',function() debug = not debug end)
+if (debug) menuitem(4,'toggle airshoes',function() godshoes = not godshoes end)
 
-dbg=function()
- poke(0x5f2d, 1)
- local vars,sy={},0
- local mx,my,mb,pb,click,mw,exp,x,y
- function butn(exp,x,y)
-  local hover=mx>=x and mx<x+4 and my>=y and my<y+6
-  print(exp and "-" or "+",x,y,hover and 7 or 5)
-  return hover and click
- end
- function inspect(v,d)
-  d=d or 0
-  local t=type(v)
-  if t=="table" then
-   if(d>5)return "[table]"
-   local props={}
-   for key,val in pairs(v) do
-    props[key]=inspect(val,d+1)
-   end
-   return {
-    expand=false,
-    props=props
-   }
-  elseif t=="string" then
-   return chr(34)..v..chr(34)
-  elseif t=="boolean" then
-   return v and "true" or "false"
-  elseif t=="nil" or t=="function" or t=="thread" then
-   return "["..t.."]"
-  else
-   return ""..v
-  end
- end
- function drawvar(var,name)
-  if type(var)=="string" then
-   print(name..":",x+4,y,6)
-   print(var,x+#(""..name)*4+8,y,7)
-   y+=6
-  else
-   -- expand button
-   if(butn(var.expand,x,y))var.expand=not var.expand
-   -- name
-   print(name,x+4,y,12) y+=6
-   -- content
-   if var.expand then
-    x+=2
-    for key,val in pairs(var.props) do
-     drawvar(val,key)
-    end
-    x-=2
-   end
-  end
- end
- function copyuistate(src,dst)
-  if type(src)=="table" and type(dst)=="table" then
-   dst.expand=src.expand
-   for key,val in pairs(src.props) do
-    copyuistate(val,dst.props[key])
-   end
-  end
- end
- function watch(var,name)
-  name=name or "[var]"
-  local p,i=vars[name],inspect(var)
-  if(p)copyuistate(p,i)
-  vars[name]=i
- end
- function clear()
-  vars={}
- end
- function draw(dx,dy,w,h)
-  dx=dx or 0
-  dy=dy or 48
-  w=w or 128-dx
-  h=h or 128-dy
-  -- collapsed mode
-  if not exp then
-   dx+=w-10
-   w,h=10,5
-  end
-  -- window
-  clip(dx,dy,w,h)
-  rectfill(0,0,128,128,1)
-  x=dx+2 y=dy+2-sy
-
-  -- read mouse
-  mx,my,mw=stat(32),stat(33),stat(36)
-  mb=band(stat(34),1)~=0
-  click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
-  pb=mb
-
-  if exp then
-
-   -- variables
-   for k,v in pairs(vars) do
-    drawvar(v,k)
-   end
-
-   -- scrolling
-   local sh=y+sy-dy
-   sy=max(min(sy-mw*8,sh-h),0)
-  end
-
-  -- expand/collapse btn
-  if(butn(exp,dx+w-10,dy))exp=not exp
-
-  -- draw mouse ptr
-  clip()
-  line(mx,my,mx,my+2,8)
-  color(7)
- end
-
- function show()
-  exp=true
-  while exp do
-   draw()
-   flip()
-  end
- end
-
- function prnt(v,name)
-  watch(v,name)
-  show()
- end
-
- return{
-  watch=watch,
-  clear=clear,
-  expand=function(val)
-   if(val~=nil)exp=val
-   return exp
-  end,
-  draw=draw,
-  show=show,
-  print=prnt
- }
+-- Focus stack
+-- Use this to keep track of what
+-- player input should be influencing.
+-- Global because dialog/others are global.
+-- get(), push(v), pop(expected)
+local focus = {}
+function focus:get() return self[#self] end
+function focus:is(q) return self:get() == q end
+function focus:isnt(q) return self:get() != q end
+function focus:push(s) add(self, s) end
+function focus:pop(expected)
+ local r = deli(self)
+ if (expected) assert(expected == r, "popped '" .. r .. "', not " .. expected)
+ return r
 end
-dbg = dbg()
 
 -- any to string (dumptable)
 function tostring(any)
  if (type(any)~="table") return tostr(any)
+ if (any.__tostring) return any:__tostring()
  local str = "{"
  for k,v in pairs(any) do
   if (str~="{") str=str..","
@@ -172,6 +52,7 @@ function printa(...)
 end
 
 -- multiple return concatenation
+-- > mrc({1, 2}, 3) = 1, 2, 3
 function mrconcat(t, ...)
  for i, v in ipairs({...}) do
   add(t, v)
@@ -179,12 +60,20 @@ function mrconcat(t, ...)
  return unpack(t)
 end
 
--- random in range
+-- reset with one transparent color
+function paltt(t)
+ palt()
+ palt(0, false)
+ palt(t, true)
+end
+
+-- random in range [a, b]
 function rndr(a, b) return rnd(b - a) + a end
 
--- random int
+-- random int [0, n)
 function rndi(n) return flr(rnd(n)) end
 
+--- sort list by keyfunc
 function sort(list, keyfunc)
  for i = 2, #list do
   for j = i, 2, -1 do
@@ -197,10 +86,17 @@ function sort(list, keyfunc)
  end
 end
 
--- print with shadow
-local function prints(s, x, y, c1, c2)
+-- clamp query between min/max
+function clamp(min_, query, max_)
+ return min(max_, max(min_, query))
+end
+
+-- print with shadow (optionally center)
+local function prints(s, x, y, c1, c2, center)
+ local screen_width = 128
+ if (center) x = (screen_width - (#s * 4)) / 2
  print(s, x, y+1, c2 or 1)
- print(s, x, y, c1)
+ print(s, x, y, c1 or 7)
 end
 
 --yield xn
@@ -234,12 +130,16 @@ end
 -->8
 -- stage classes
 
+-- 2d vector
+-- self ops: clone, unpack
+-- vector ops: +, -, elemx()
+-- scalar ops: *
 local vec = obj:extend{}
 function vec:init(x, y)
  self.x, self.y =
  x or 0, y or x or 0
 end
-function vec:clone() return vec(self.x, self.y) end
+function vec:clone() return vec(self:unpack()) end
 function vec:__add(v) return vec(self.x + v.x, self.y + v.y) end
 function vec:__sub(v) return vec(self.x - v.x, self.y - v.y) end
 function vec:__mul(n) return vec(self.x * n, self.y * n) end
@@ -250,6 +150,17 @@ function vec:elemx(v)
  return vec(self.x * v.x, self.y * v.y)
 end
 
+local vec_spritesize = vec(7,7)
+
+-- 2d bounding box
+-- self ops: clone, unpack, center (get)
+-- bbox ops: overlaps, within
+-- scalar ops: *, outline, shift, grow
+--  * multiplies size and origin
+--  grow multiplies size only
+-- vector ops:
+--  maptiles(offset) (get all touching map tiles w/ info)
+--  shift (move origin by v)
 local bbox = obj:extend{}
 function bbox:init(origin, size)
  self.origin, self.size = origin, size
@@ -261,13 +172,11 @@ function bbox:init(origin, size)
  corner.x, corner.y,
  size:unpack()
 end
-function bbox:shift(v)
- self.origin += v
- self:init(self.origin, self.size)
- return self
-end
+function bbox:shift(v) return bbox(self.origin+b, self.size) end
+function bbox:clone() return bbox(self.origin:unpack(), self.size.unpack()) end
 function bbox:unpack() return self.x0, self.y0, self.x1, self.y1 end
 function bbox:overlaps(other)
+ if (other == nil) return false
  return self.x0 <= other.x1 and other.x0 <= self.x1 and self.y0 <= other.y1 and other.y0 <= self.y1
 end
 function bbox:within(other)
@@ -280,77 +189,120 @@ function bbox:outline(w)
   self.size + vw*2
  )
 end
+function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
+function bbox:grow(n) return bbox(self.origin, self.size*n) end
 function bbox:center()
  return self.origin + self.size*(1/2)
 end
-function bbox:itermap()
- -- todo document this
- local x0 = flr(self.x0)
- local x, y = x0 - 1, flr(self.y0)
- return function()
-  x += 1
-  if x >= self.x1 then
-   x = x0
-   y += 1
-   if (y >= self.y1) return
+-- function bbox:itermap()
+--  -- todo document this
+--  local x0 = flr(self.x0)
+--  local x, y = x0 - 1, flr(self.y0)
+--  return function()
+--   x += 1
+--   if x >= self.x1 then
+--    x = x0
+--    y += 1
+--    if (y >= self.y1) return
+--   end
+--   return x, y, mget(x, y)
+--  end
+-- end
+function bbox:maptiles(offset)
+ if (offset == nil) offset = vec(0, 0)
+ local ox, oy = offset:unpack()
+ local tiles = {}
+ for x = flr(self.x0/8), flr(self.x1/8) do
+  for y = flr(self.y0/8), flr(self.y1/8) do
+   -- dbg.print({x+ox, y+oy})
+   local tpos = vec(x+ox, y+oy)
+   local i = mget(tpos:unpack())
+   add(tiles, {spr=i, flags=fget(i), pos=tpos})
   end
-  return x, y, mget(x, y)
  end
+ printh(tostring(tiles))
+ return tiles
 end
 
+local box_screen = bbox(vec(0, 0), vec(128, 128))
+
 -- actors
+-- [1]pos: main position
+-- draw: draw function (or nop)
+-- z: draw order
+-- z_is_y: auto set z to pos.y
+-- ttl: self-destroy after n ticks if set
 local actor = obj:extend{
  draw = nop,
  stage = nil,
  z = 0,
- age = -1,
  ttl = nil,
- -- anch: offset between
- -- bounding box and
- -- pos (top left)
- anchor = vec()
+ z_is_y = true,  -- domain: camera perspective
 }
 function actor:init(pos)
  self.pos = pos
 end
 function actor:update()
- self.age += 1
- if self.ttl and self.age >= self.ttl then
-  self:destroy()
+ if self.ttl then
+  self.ttl -= 1
+  if (self.ttl < 1) self:destroy()
  end
+ if (self.z_is_y) self.z = self.pos.y
 end
 function actor:destroy() self._doomed = true end
 
+-- mob
+-- [1]pos: main position
+-- [2]spr: sprite top-left corner
+-- [3]size: size of sprite area to draw
+-- shape_offset: vector from pos to shape
+-- anchor: vector from pos to sprite
+-- anim: table of frames to repeat instead of spr
+-- frame_len: how long to show each frame in anim
+-- flipx, flipy: sprite flip booleans
+-- paltab: pallette replacement table (opt)
+-- tcol: color # to mark as transparent
+-- get_hitbox(v): hitbox is self.pos were v
 local mob = actor:extend{
- size = vec(7,7),
+ size = vec_spritesize,
  anchor = vec(0,0),
+ shape_offset = vec(0,0),
  anim = nil,
- frame_len = 1
+ frame_len = 1,
+ flipx = false,
+ flipy = false,
+ tcol = nil,
+ paltab = nil
 }
 function mob:init(pos, ...)
  self.spr, self.size = ...
  actor.init(self, pos)
- self.shape = bbox(
-  self.pos - self.anchor,
-  self.size
- )
+ self.bsize = self.size
 end
 function mob:update()
  actor.update(self)
- self.shape = bbox(
-  self.pos - self.anchor,
-  self.size
+ self.shape = self:get_hitbox(self.pos)
+end
+function mob:get_hitbox(pos)
+ return bbox(
+  pos + self.shape_offset,
+  self.bsize
  )
 end
 function mob:draw()
+ -- if self.spr or self.afnim then
+ if (self.tcol != nil) paltt(self.tcol)
+ if (self.paltab) pal(self.paltab)
  -- caching unpack saves tokens
- local spx, spy = self.pos:unpack()
+ local temp = (self.pos + self.anchor)  -- picotool :(
+ local spx, spy = temp:unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
  -- anim is a list of frames to loop
  -- frames are sprite ids
  if self.anim then
-  local findex = (flr(self.stage.mclock/self.frame_len) % #self.anim) +1
+  local mclock = self.ttl or self.stage.mclock
+  local findex = (flr(mclock/self.frame_len) % #self.anim) +1
   local frame = self.anim[findex]
   self._frame, self._findex = frame, findex
 
@@ -358,49 +310,73 @@ function mob:draw()
   -- if type(frame) == "function"
   --  frame()
   -- else
-  if (frame != false) spr(frame, spx, spy, spw, sph)
- -- end
+  if (frame != false) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
  else
-  spr(self.spr, spx, spy, spw, sph)
+  if (self.spr != nil and self.spr != false) spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
  end
+ -- end
  if debug then
   -- print bbox and anchor/origin
-  rect(mrconcat({self.shape:unpack()}, 13))
-  local temp = (self.pos - self.anchor) --p8tool :(
+  rect(mrconcat({self.shape:unpack()}, 2))
   line(spx, spy,
-   mrconcat({temp:unpack()}, 4))
+   mrconcat({self.pos:unpack()}, 4))
+  pset(spx, spy, 5)
  end
+ if (self.paltab) pal()
 end
 
+-- particle
+-- pos, vel, acc, ttl, col, z
 local particle = actor:extend{}
 function particle:init(pos, ...)
  actor.init(self, pos)
  self.vel, self.acc, self.ttl, self.col, self.z = ...
 end
 function particle:update()
- actor.update(self)
  self.vel += self.acc
  self.pos += self.vel
+ actor.update(self)
 end
 function particle:draw()
  pset(self.pos.x, self.pos.y, self.col)
 end
 
 -- stage
+-- updates and draws all contained objects in order
+-- tracks and executes asynchronous tasks
+-- :add(object) to add object
+--  objects can have only one stage at a time
+-- :schedule(tics, callback) to execute callback in # ticks
+-- mclock is highly composite modulo clock
+-- % 1-15, 18, 20, 21-22, 24, 28...
 local stage = obj:extend{}
 function stage:init()
  self.objects = {}
  self.mclock = 0
  self.camera = vec()  -- use for map offset
+ self._tasks = {}
 end
 function stage:add(object)
  add(self.objects, object)
+ -- if (object.stage) del(object.stage.objects, object)
  object.stage = self
 end
 function stage:_zsort()
  sort(self.objects, function(a) return a.z end)
 end
 function stage:update()
+ -- Update clock
+ self.mclock = (self.mclock + 1) % 27720
+ -- Update tasks
+ dbg.watch(self._tasks, "tasks")
+ for handle, task in pairs(self._tasks) do
+  task.ttl -= 1
+  if task.ttl <= 0 then
+   task.callback()
+   self._tasks[handle] = nil
+  end
+ end
+ -- Update objects
  for object in all(self.objects) do
   if object._doomed then
    -- clean up garbage
@@ -410,7 +386,6 @@ function stage:update()
    object:update()
   end
  end
- self.mclock = (self.mclock + 1) % 27720
 end
 function stage:draw()
  self:_zsort()
@@ -418,6 +393,15 @@ function stage:draw()
   if (not object._doomed) object:draw()
  end
 end
+function stage:schedule(tics, callback)
+ add(self._tasks, {
+   ttl = tics,
+   callback = callback,
+  })
+end
+
+-->8
+-- game utility
 
 -->8
 -- game classes
