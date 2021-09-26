@@ -5,6 +5,12 @@ __lua__
 -- title
 -- author
 
+-- todo replace relpos; make positions always room-relative
+-- Todo replace #dialog lines with a global "is UI focused" variable
+-- todo add a choice menu to dialoger
+-- global "tile vector" for quick grid multiplication
+-- pico-8 coroutines, seriously
+
 -- global vars
 
 local debug = true  -- (stat(6) == 'debug')
@@ -1224,6 +1230,9 @@ function room_stair(v)
  end
  o_great.draw = drawgreat
  cur_room:add(o_great)
+
+ -- todo through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.
+ -- you hear a distant winney.
 
 end
 
