@@ -5,7 +5,6 @@ __lua__
 -- title
 -- author
 
--- todo replace relpos; make positions always room-relative
 -- Todo replace #dialog lines with a global "is UI focused" variable
 -- todo add a choice menu to dialoger
 -- global "tile vector" for quick grid multiplication
@@ -322,15 +321,19 @@ end
 --   return x, y, mget(x, y)
 --  end
 -- end
-function bbox:maptiles()
- -- todo document this
+function bbox:maptiles(offset)
+ if (offset == nil) offset = vec(0, 0)
+ local ox, oy = offset:unpack()
  local tiles = {}
  for x = flr(self.x0/8), flr(self.x1/8) do
   for y = flr(self.y0/8), flr(self.y1/8) do
-   local i = mget(x, y)
-   add(tiles, {spr=i, flags=fget(i)})
+   -- dbg.print({x+ox, y+oy})
+   local tpos = vec(x+ox, y+oy)
+   local i = mget(tpos:unpack())
+   add(tiles, {spr=i, flags=fget(i), pos=tpos})
   end
  end
+ printh(tostring(tiles))
  return tiles
 end
 
@@ -744,7 +747,7 @@ function newportal(pos, dest, deststate)
   local grav = vec(0, 0.01)
   for i = 0, 24 do
    local spread = 8
-   local p_origin = o_player.stage:relpos(o_player) + o_player.anchor
+   local p_origin = o_player.pos + o_player.anchor
    local p_extent = p_origin + o_player.size
    local point_in_plr_spr = vec(
     rndr(p_origin.x, p_extent.x),
@@ -784,7 +787,7 @@ function newportal(pos, dest, deststate)
    o_player.cooldown = 5
    cur_room:update()  -- align camera
    printh('portalled player to')
-   printh(o_player.stage:relpos(o_player))
+   printh(o_player.pos)
   end)
  end
  return o_portal
@@ -805,7 +808,7 @@ function newtrig(pos, size, dest, deststate)
   o_player.cooldown = 1
   cur_room:update()  -- align camera
   printh('triggered player to')
-  printh(o_player.stage:relpos(o_player))
+  printh(o_player.pos)
  end
  return o_trig
 end
@@ -828,9 +831,8 @@ end
 function t_player:_moveif(step, facing)
  local npos = self.pos + step
  local nhbox = self:get_hitbox(npos)
- local unobstructed = true
- dbg.watch(nhbox:maptiles(), "hittiles")
- for i,tile in pairs(nhbox:maptiles()) do
+ local unobstructed = nhbox:within(self.stage.box_px)
+ for i,tile in pairs(nhbox:maptiles(self.stage.map_origin)) do
   if band(tile.flags, flag_walkable) == 0 then
    unobstructed = false
    break
@@ -940,25 +942,16 @@ local room = stage:extend{
  camfocus = nil
 }
 function room:init(mx, my, mw, mh)
- self.box_map = bbox(vec(mx, my), vec(mw, mh))
+ self.map_origin = vec(mx, my)*16
+ self.box_map = bbox(vec(0, 0), vec(mw, mh))
  self.box_cells = self.box_map*16
  self.box_px = self.box_cells*8
 
  self.camfocus = self.box_px:center()
-
- -- origin in units
- self.origin_map = vec(mx, my)
- self.origin_cells = self.origin_map*16
- self.origin_px = self.origin_cells*8
-
- -- extent in units
- self.extent_map = vec(mw, mh)
- self.extent_cells = self.extent_map*16
- self.extent_px = self.extent_cells*8
  stage.init(room)
 end
 function room:draw()
- local cell_x, cell_y = self.box_cells.origin:unpack()
+ local map_x, map_y = self.map_origin:unpack()
  local cell_w, cell_h = self.box_cells.size:unpack()
  local sx, sy = self.box_px.origin:unpack()
 
@@ -968,10 +961,11 @@ function room:draw()
  cam.x = clamp(cx0, cam.x, cx1-128)
  cam.y = clamp(cy0, cam.y, cy1-128)
 
+ -- offset by camera focus
  camera(cam:unpack())
 
  dbg.watch(cam,"cam")
- map(cell_x, cell_y, sx, sy, cell_w, cell_h)
+ map(map_x, map_y, sx, sy, cell_w, cell_h)
  stage.draw(self)
  if debug and btn(5) then
    for object in all(self.objects) do
@@ -982,19 +976,17 @@ function room:draw()
     end
    end
   end
- camera()
+
+ camera() -- ui to raw screen coords
  if debug and o_player then
   -- rect(mrconcat({self.box_px:unpack()}, 10))
   local mous = vec(stat(32), stat(33)) + cam - cur_room.box_px.origin
-  prints('plr  ' .. tostring(self:relpos(o_player)), 0, 0)
+  prints('plr  ' .. tostring(o_player.pos), 0, 0)
   prints('room ' .. tostring(self.box_map.origin), 0, 8)
   prints('mous ' .. tostring(mous), 0, 16)
   
  end
 
-end
-function room:relpos(object)
- return object.pos - self.box_px.origin
 end
 function room:add(object)
  object.pos += self.box_px.origin
@@ -1258,7 +1250,7 @@ function room_roof(v)
  cur_room:add(o_player)
 
  function cur_room:update()
-  if self:relpos(o_player).x < 32 then
+  if o_player.pos.x < 32 then
    o_player.bsize = vec(7,7)
    o_player.shape_offset = vec(-4, -7)
   else
