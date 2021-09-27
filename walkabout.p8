@@ -777,31 +777,31 @@ dialoger = {
 -->8
 -- game classes
 
-local roommenu_room = 1
-local roommenu_slot = 4
-local irooms = {}
-local srooms = {}
 function roommenu_init(rooms)
+ local roommenu_room = 1
+ local roommenu_slot = 4
+ local irooms = {}
+ local srooms = {}
+
+ function set_roommenu(label)
+  menuitem(roommenu_slot, 'room:' .. (label or '???'), roommenu_cb)
+ end
+ function roommenu_cb(b)
+  local left, right, select = b&1, b&10, b&100
+  if (left>0) roommenu_room = ((roommenu_room-2) % #irooms) + 1
+  if (right>0) roommenu_room = (roommenu_room % #irooms) + 1
+  if (select>0) irooms[roommenu_room]()
+  set_roommenu(srooms[roommenu_room])
+ end
+
  local i = 0
  for k,v in pairs(rooms) do
   i += 1
   irooms[i] = v
   srooms[i] = k
  end
-set_roommenu(srooms[roommenu_room])
-end
-
-function set_roommenu(label)
- menuitem(roommenu_slot, 'room:' .. (label or '???'), roommenu_cb)
-end
-function roommenu_cb(b)
- local left, right, select = b&1, b&10, b&100
- if (left>0) roommenu_room = ((roommenu_room-2) % #irooms) + 1
- if (right>0) roommenu_room = (roommenu_room % #irooms) + 1
- if (select>0) irooms[roommenu_room]()
  set_roommenu(srooms[roommenu_room])
 end
-
 
 local t_sign = mob:extend{
  lines = nil,
