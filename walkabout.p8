@@ -5,18 +5,17 @@ __lua__
 -- title
 -- author
 
--- Todo replace #dialog lines with a global "is UI focused" variable
 -- todo add a choice menu to dialoger
--- global "tile vector" for quick grid multiplication
 -- pico-8 coroutines, seriously
 -- TODO interactive debugger extended class support
+-- todo replace dialog prefix with options table
 
 -- global vars
 local o_player
 local debug = true  -- (stat(6) == 'debug')
 
 -- game state flags
-local speedshoes = false
+local speedshoes = false or debug
 local godshoes = false
 
 -- defined sprite flags
@@ -144,56 +143,79 @@ end
 -- stage classes
 
 -- 2d vector
--- self ops: clone, unpack
--- vector ops: +, -, elemx()
+-- self ops: clone, unpack, flip
+-- vector ops: +, -, dotp()
 -- scalar ops: *
 local vec = obj:extend{}
 function vec:init(x, y)
  self.x, self.y =
  x or 0, y or x or 0
 end
+function vec8(x, y) return vec(x, y)*8 end
+local vec_spritesize = vec(7,7)
+local vec_spritesize = vec(8,8)
+local vec_oneone = vec(1,1)
+local vec_noneone = vec(-1,-1)
 function vec:clone() return vec(self:unpack()) end
-function vec:__add(v) return vec(self.x + v.x, self.y + v.y) end
-function vec:__sub(v) return vec(self.x - v.x, self.y - v.y) end
+function vec:flip() return vec(self.y, self.x) end
+function vec:floor() return vec(flr(self.x), flr(self.y)) end
+function vec:__add(v, y)
+ if (y) v = vec(v, y)
+ return vec(self.x + v.x, self.y + v.y)
+end
+function vec:__sub(v, y)
+ if (y) v = vec(v, y)
+ return vec(self.x - v.x, self.y - v.y)
+end
 function vec:__mul(n) return vec(self.x * n, self.y * n) end
+function vec:__div(n) return vec(self.x / n, self.y / n) end
 function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
 function vec:unpack() return self.x, self.y end
-function vec:elemx(v)
+function vec:dotp(v, y)
+ if (y) v = vec(v, y)
  -- product w/ vector
- return vec(self.x * v.x, self.y * v.y)
+ -- temporarily de-zero-index
+ local plusone = self+vec_oneone
+ return vec((plusone.x * v.x), (plusone.y * v.y))-vec_oneone
 end
-
-local vec_spritesize = vec(7,7)
 
 -- 2d bounding box
 -- self ops: clone, unpack, center (get)
 -- bbox ops: overlaps, within
--- scalar ops: *, outline, shift, grow
+-- scalar ops: *, outline, shift
 --  * multiplies size and origin
---  grow multiplies size only
 -- vector ops:
 --  maptiles(offset) (get all touching map tiles w/ info)
 --  shift (move origin by v)
+--  grow (move corner/change size by v)
 local bbox = obj:extend{}
 function bbox:init(origin, size)
  self.origin, self.size = origin, size
- local corner = origin + size
+ self.corner = origin + size
  self.x0, self.y0,
  self.x1, self.y1,
  self.w, self.h =
  origin.x, origin.y,
- corner.x, corner.y,
+ self.corner.x, self.corner.y,
  size:unpack()
 end
-function bbox:shift(v) return bbox(self.origin+b, self.size) end
+function bbox.fromxywh(x, y, w, h) return bbox(vec(x, y), vec(w, h)) end
+function bbox.pack(x0, y0, x1, y1)
+ local o = vec(x0, y0)
+ return bbox(o, vec(x1, y1)-o)
+end
+local box_screen = bbox.pack(0, 0, 128, 128)
+function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
+function bbox:shift(v) return bbox(self.origin+v, self.size) end
+function bbox:grow(v) return bbox(self.origin, self.size+v) end
 function bbox:clone() return bbox(self.origin:unpack(), self.size.unpack()) end
 function bbox:unpack() return self.x0, self.y0, self.x1, self.y1 end
 function bbox:overlaps(other)
  if (other == nil) return false
- return self.x0 <= other.x1 and other.x0 <= self.x1 and self.y0 <= other.y1 and other.y0 <= self.y1
+ return self.x0 < other.x1 and other.x0 < self.x1 and self.y0 < other.y1 and other.y0 < self.y1
 end
 function bbox:within(other)
- return self.x0 > other.x0 and self.x1 < other.x1 and self.y0 > other.y0 and self.y1 < other.y1
+ return self.x0 > other.x0 and self.x1 <= other.x1 and self.y0 > other.y0 and self.y1 <= other.y1
 end
 function bbox:outline(w)
  local vw = vec(w, w)
@@ -202,10 +224,8 @@ function bbox:outline(w)
   self.size + vw*2
  )
 end
-function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
-function bbox:grow(n) return bbox(self.origin, self.size*n) end
 function bbox:center()
- return self.origin + self.size*(1/2)
+ return self.origin + self.size/2
 end
 -- function bbox:itermap()
 --  -- todo document this
@@ -225,20 +245,17 @@ function bbox:maptiles(offset)
  if (offset == nil) offset = vec(0, 0)
  local ox, oy = offset:unpack()
  local tiles = {}
- for x = flr(self.x0/8), flr(self.x1/8) do
-  for y = flr(self.y0/8), flr(self.y1/8) do
+ -- Corner is outside edge, only check *within* [0, 1)
+ for x = flr(self.x0/8), flr((self.x1-1)/8) do
+  for y = flr(self.y0/8), flr((self.y1-1)/8) do
    -- dbg.print({x+ox, y+oy})
    local tpos = vec(x+ox, y+oy)
    local i = mget(tpos:unpack())
    add(tiles, {spr=i, flags=fget(i), pos=tpos})
   end
  end
- printh(tostring(tiles))
  return tiles
 end
-
-local box_screen = bbox(vec(0, 0), vec(128, 128))
-
 -- actors
 -- [1]pos: main position
 -- draw: draw function (or nop)
@@ -291,6 +308,7 @@ function mob:init(pos, ...)
  self.spr, self.size = ...
  actor.init(self, pos)
  self.bsize = self.size
+ self.shape = self:get_hitbox(self.pos)
 end
 function mob:update()
  actor.update(self)
@@ -302,13 +320,25 @@ function mob:get_hitbox(pos)
   self.bsize
  )
 end
+function mob:drawdebug()
+ if debug then
+  -- picotool issue #92 :(
+  local spx, spy = self.pos:__add(self.anchor):unpack()
+  -- print bbox and anchor/origin
+  local drawbox = self.shape:grow(vec_noneone)
+  rect(mrconcat({drawbox:unpack()}, 2))
+  line(spx, spy,
+   mrconcat({self.pos:unpack()}, 4))
+  pset(spx, spy, 10)
+ end
+end
 function mob:draw()
  -- if self.spr or self.afnim then
  if (self.tcol != nil) paltt(self.tcol)
  if (self.paltab) pal(self.paltab)
  -- caching unpack saves tokens
- local temp = (self.pos + self.anchor)  -- picotool :(
- local spx, spy = temp:unpack()
+ -- picotool issue #92 :(
+ local spx, spy = self.pos:__add(self.anchor):unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
  -- anim is a list of frames to loop
@@ -328,13 +358,7 @@ function mob:draw()
   if (self.spr != nil and self.spr != false) spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
  end
  -- end
- if debug then
-  -- print bbox and anchor/origin
-  rect(mrconcat({self.shape:unpack()}, 2))
-  line(spx, spy,
-   mrconcat({self.pos:unpack()}, 4))
-  pset(spx, spy, 5)
- end
+ self:drawdebug()
  if (self.paltab) pal()
 end
 
@@ -416,12 +440,14 @@ end
 -->8
 -- game utility
 
+function vec16(x, y) return vec(x, y)*16 end
+
 -- Interactive debugger
 -- based on work by mot ?tid=37822
 dbg=function()
  poke(0x5f2d, 1)
  local vars,sy={},0
- local mx,my,mb,pb,click,mw,exp,x,y
+ local mx,my,mb,pb,click,mw,exp,x,y,dragx0, dragy0,mbox
  function butn(exp,x,y)
   local hover=mx>=x and mx<x+4 and my>=y and my<y+6
   print(exp and "-" or "+",x,y,hover and 7 or 5)
@@ -520,6 +546,15 @@ dbg=function()
   if(butn(exp,dx+w-10,dy))exp=not exp
   -- draw mouse ptr
   clip()
+
+  if mb then
+   mbox = bbox.pack(dragx0, dragy0, mx, my)
+  else
+   dragx0, dragy0 = mx, my
+   mbox = nil
+  end
+  line(dragx0,dragy0,dragx0+2,dragy0,4)
+
   line(mx,my,mx,my+2,8)
   color(7)
  end
@@ -543,6 +578,7 @@ dbg=function()
    return exp
   end,
   draw=draw,
+  mbox=function() return mbox end,
   show=show,
   print=prnt
  }
@@ -552,34 +588,33 @@ dbg = dbg()
 -- dialog box
 -- based on work by rustybailey
 
--- todo replace prefix with options table
-
 dialoger = {
  x = 8,
  y = 97,
- color = 7,
+ color = 0,
  max_chars_per_line = 28,
  max_lines = 4,
  queue = {},
  blinking_counter = 0,
+ opts = {},
  init = function(self)
  end,
- enqueue = function(self, message, prefix)
-  -- default prefix to empty
-  prefix = type(prefix) == "nil" and '' or prefix
+ enqueue = function(self, message, opts)
+  -- default opts to empty
+  opts = type(opts) == "nil" and {} or opts
   add(self.queue, {
     message = message,
-    prefix = prefix
+    opts = opts
    })
 
   if (#self.queue == 1) then
    focus:push('dialog')
-   self:trigger(self.queue[1].message, self.queue[1].prefix)
+   self:trigger(self.queue[1].message, self.queue[1].opts)
   end
  end,
- trigger = function(self, message, prefix)
-  self.prefix = prefix
-  self.current_message = prefix
+ trigger = function(self, message, opts)
+  self.opts = opts
+  self.current_message = opts.prefix or ''
   self.messages_by_line = nil
   self.animation_loop = nil
   self.current_line_in_table = 1
@@ -599,37 +634,27 @@ dialoger = {
   local current_line_msg = ''
 
   for i = 1, #message do
-   -- get the current letter add
    letter = sub(message, i, i)
-
-   -- keep track of the current word
    word ..= letter
 
-   -- if it's a space or the end of the message,
-   -- determine whether we need to continue the current message
-   -- or start it on a new line
+   -- on word break or end of line
    if letter == ' ' or i == #message then
-    -- get the potential line length if this word were to be added
+    -- new line length
     local line_length = #current_line_msg + #word
-    -- if this would overflow the dialog width
     if line_length > self.max_chars_per_line then
-     -- add our current line to the total message table
+     -- line will overflow, move word to new line.
      add(total_msg, current_line_msg)
-     -- and start a new line with this word
      current_line_msg = word
     else
-     -- otherwise, continue adding to the current line
      current_line_msg ..= word
     end
 
-    -- if this is the last letter and it didn't overflow
-    -- the dialog width, then go ahead and add it
+    -- add letter if it's the last and didn't overflow
     if i == #message then
      add(total_msg, current_line_msg)
     end
 
-    -- reset the word since we've written
-    -- a full word to the current message
+    -- we've written a full word to the current message
     word = ''
    end
   end
@@ -655,15 +680,15 @@ dialoger = {
    end
    self.current_message ..= '\n'
    self.current_line_count += 1
-   if ((self.current_line_count > self.max_lines) or (self.current_line_in_table == #self.messages_by_line)) then  --  and not self.autoplay)) then
+   if ((self.current_line_count > self.max_lines) or (self.current_line_in_table == #self.messages_by_line and not self.opts.autoplay)) then
     self.pause_dialog = true
     yield()
    end
   end
 
- -- if (self.autoplay) then
- --  self.yieldn(30)
- -- end
+  if (self.opts.autoplay) then
+   self.yieldn(30)
+  end
  end,
  shift = function (t)
   local n=#t
@@ -683,56 +708,54 @@ dialoger = {
     if btnp(4) then
      self.pause_dialog = false
      self.current_line_count = 1
-     self.current_message = self.prefix
+     self.current_message = self.opts.prefix
     end
    end
   elseif (self.animation_loop and self.current_message) then
-   -- if (self.autoplay) self.current_message = ''
+   if (self.opts.autoplay) self.current_message = self.opts.prefix or ''
    self.animation_loop = nil
   end
 
   if (not self.animation_loop and #self.queue > 0) then
    self.shift(self.queue, 1)
    if (#self.queue > 0) then
-    self:trigger(self.queue[1].message, self.queue[1].prefix)
+    self:trigger(self.queue[1].message, self.queue[1].opts)
     coresume(self.animation_loop, self)
    else
     focus:pop('dialog')
    end
   end
 
-  --if (not self.autoplay) then
-  self.blinking_counter += 1
-  if self.blinking_counter > 30 then self.blinking_counter = 0 end
- --end
+  if (not self.opts.autoplay) then
+   self.blinking_counter += 1
+   if self.blinking_counter > 30 then self.blinking_counter = 0 end
+  end
  end,
  draw = function(self)
   local screen_width = 128
 
   -- display message
   if (self.current_message) then
-   rectfill(0,90,127,127,0)
-   rect(0,90,127,127,7)
+   rectfill(1,90,126,126,6)
+   rect(1,90,126,126,5)
    print(self.current_message, self.x, self.y, self.color)
   end
 
   -- draw blinking cursor at the bottom right
-  if (self.pause_dialog) then  -- not self.autoplay and
+  if (not self.opts.autoplay) and self.pause_dialog then  --
    if self.blinking_counter > 15 then
+    color(13)
     if (self.current_line_in_table == #self.messages_by_line) then
-     -- draw square
-     rectfill(
-      screen_width - 11,
-      screen_width - 10,
-      screen_width - 11 + 3,
-      screen_width - 10 + 3,
-      7
-     )
+     print('◆', screen_width - 11, screen_width - 10)
     else
      -- draw arrow
-     line(screen_width - 12, screen_width - 9, screen_width - 8,screen_width - 9)
-     line(screen_width - 11, screen_width - 8, screen_width - 9,screen_width - 8)
-     line(screen_width - 10, screen_width - 7, screen_width - 10,screen_width - 7)
+     for box in all({
+       bbox.pack(-12,-9,-8,-9),
+       bbox.pack(-11,-8,-9,-8),
+       bbox.pack(-10,-7,-10,-7)
+      }) do
+      line(box:shift(vec(screen_width)):unpack())
+     end
     end
    end
   end
@@ -752,8 +775,8 @@ function t_sign:addline(text)
  add(self.lines, text)
 end
 function t_sign:interact(player)
- for _, v in ipairs(self.lines) do
-  dialoger:enqueue(v, self.prefix)
+ for _, v in ipairs(self.lines or {'nO PROBLEM HERE.'}) do
+  dialoger:enqueue(v, {prefix=self.prefix})
  end
  self.talkedto += 1
 end
@@ -761,13 +784,13 @@ end
 local t_npc = t_sign:extend{
  facing = 'd',
  spr0 = 0,
- bsize = vec(15,7),
+ bsize = vec(16,8),
  obstructs = true,
  tcol = 15
 }
 function t_npc:init(...)
  t_sign:init(...)
- self.size = vec(15,23)
+ self.size = vec(16,24)
  self.spr0 = self.spr
 end
 function t_npc:interact(player)
@@ -800,7 +823,7 @@ local t_button = mob:extend{
 }
 
 function newportal(pos, dest, deststate)
- o_portal = t_button(pos, 005, vec(23, 15))
+ o_portal = t_button(pos, 005, vec(24, 16))
  o_portal.anchor = vec(-12, -4)
  o_portal.shape_offset = vec(-12, -4)
  o_portal.tcol = 15
@@ -883,17 +906,20 @@ local t_player = mob:extend{
  cooldown = 1,
  justtriggered = true,
  paltab = {[14]=7},
- shape_offset = vec(-8, -7)
+ shape_offset = vec(-7, -7)
 }
 function t_player:init(pos)
- mob.init(self, pos, 64, vec(15,23))
- self.bsize = vec(14, 7)
+ mob.init(self, pos, 64, vec(16,24))
+ self.bsize = vec(13, 7)  -- a little smaller
 end
 function t_player:_moveif(step, facing)
  local npos = self.pos + step
  local nhbox = self:get_hitbox(npos)
+ -- self.nhbox = nhbox
  local unobstructed = nhbox:within(self.stage.box_px)
- for i,tile in pairs(nhbox:maptiles(self.stage.map_origin)) do
+ local tiles = nhbox:maptiles(self.stage.map_origin)
+ dbg.watch(tiles, "foottiles")
+ for i,tile in pairs(tiles) do
   if band(tile.flags, flag_walkable) == 0 then
    unobstructed = false
    break
@@ -996,16 +1022,16 @@ function t_player:draw()
   self.anchor = vec(-8, -24)
  end
  mob.draw(self)
- if (debug) rect(mrconcat({self.shape:unpack()}, 2))
  if (debug and self.ibox) rect(mrconcat({self.ibox:unpack()}, 10))
+ if (debug and self.nhbox) rect(mrconcat({self.nhbox:unpack()}, 10))
 end
 
 local room = stage:extend{
  camfocus = nil
 }
 function room:init(mx, my, mw, mh)
- self.map_origin = vec(mx, my)*16
- self.box_map = bbox(vec(0, 0), vec(mw, mh))
+ self.map_origin = vec16(mx, my)
+ self.box_map = bbox.fromxywh(0, 0, mw, mh)
  self.box_cells = self.box_map*16
  self.box_px = self.box_cells*8
 
@@ -1039,15 +1065,35 @@ function room:draw()
   end
  end
 
- camera()  -- ui to raw screen coords
  if debug and o_player then
+  local ui_offset = cam - self.box_px.origin
+  local mous = vec(stat(32), stat(33)) + ui_offset
+  local mbox = dbg:mbox()
+  if mbox and abs(mbox.size.x) + abs(mbox.size.y) > 0 then
+   mbox = mbox:shift(ui_offset)
+   fillp(0b0101101001011010)
+   palt()
+   color(0x48)
+   rect(mbox:unpack())
+   fillp()
+   prints(mbox.origin, mbox.origin:unpack())
+   prints(mbox.corner, mbox.corner:unpack())
+   prints(mbox.size, min(mbox.origin.x, mous.x), max(mbox.corner.y, mous.y)-6)
+  end
   -- rect(mrconcat({self.box_px:unpack()}, 10))
-  local mous = vec(stat(32), stat(33)) + cam - cur_room.box_px.origin
-  prints('plr  ' .. tostring(o_player.pos), 0, 0)
-  prints('room ' .. tostring(self.box_map.origin), 0, 8)
-  prints('mous ' .. tostring(mous), 0, 16)
+  camera()  -- ui to raw screen coords
+  prints('plr  ' .. tostr(o_player.pos), 0, 0)
+  prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
+  prints('-16' .. tostr(o_player.pos:__div(16):floor()), 68, 8)
+  line(67, 2, 67, 10)
+  prints('room ' .. tostr(self.map_origin/16), 0, 8)
+  prints('mous ' .. tostr(mous), 0, 16)
+  prints('-- 8' .. tostr(mous:__div(8):floor()), 64, 16)
+  prints('-16' .. tostr(mous:__div(16):floor()), 68, 24)
+  line(67, 18, 67, 26)
 
  end
+ camera()
 
 end
 function room:add(object)
@@ -1056,7 +1102,7 @@ function room:add(object)
 end
 
 function drawgreat(self)
- local box = bbox((self.pos + vec(0,2)), vec(15, 12))
+ local box = bbox((self.pos + vec(0,2)), vec(16, 12))
  rectfill(mrconcat({box:unpack()},2))
  fillp(0b1010101010101010)
  rectfill(mrconcat({box:unpack()},6))
@@ -1075,12 +1121,12 @@ end
 cur_room = nil
 
 function room_complab()
- local center = vec(128, 132)
+ local center = vec16(8, 8.25)
  cur_room = room(0, 0, 2, 2)
  o_player = t_player(center)
  cur_room:add(o_player)
 
- o_computer1 = t_sign(vec(24, 8), 010, vec(15, 15))
+ o_computer1 = t_sign(vec16(1.5, 0.5), 010, vec8(2, 2))
  o_computer1:addline(
   "tWO WHITE LINES OF TEXT ARE BLOWN UP TO FILL THE ENTIRE SCREEN.")
  o_computer1:addline(
@@ -1089,20 +1135,20 @@ function room_complab()
   "i WONDER WHAT IT SAYS.")
  cur_room:add(o_computer1)
 
- o_computer2 = t_sign(vec(88, 8), 112, vec(15, 7))
+ o_computer2 = t_sign(vec16(5.5, 0.5), 112, vec8(2, 1))
  o_computer2:addline(
   "lOOKS LIKE SOMEONE WAS PLANNING A FUNDRAISING CAMPAIGN FOR A VIDEO GAME.")
  o_computer2:addline("tOO BAD THEY'RE JUST A TROLL.")
  o_computer2.bsize = vec(15,15)
  cur_room:add(o_computer2)
 
- o_computer3 = t_sign(vec(156, 9), 116, vec(7, 7))
+ o_computer3 = t_sign(vec(156, 9), 116, vec_spritesize)
  o_computer3:addline("iT'S AN OFF-ICE COMPUTER.")
  o_computer3:addline("yOU CAN TELL BECAUSE SOMEONE IS RUNNING TROLL POWERPOINT. iT TICKED PAST THE LAST SLIDE THOUGH.")
  o_computer3.tcol = 15
  cur_room:add(o_computer3)
 
- o_computer4 = t_sign(vec(216, 8), 010, vec(15, 15))
+ o_computer4 = t_sign(vec(216, 8), 010, vec8(2, 2))
  o_computer4.paltab = {[6]=3}
  o_computer4:addline(
   "wOWIE! LOOKS LIKE SOMEBODY'S BEEN FLIRTING. iN \f3green.")
@@ -1110,7 +1156,7 @@ function room_complab()
   "dUE TO TECHNICAL LIMITATIONS, THE KEYBOARD HAS ALSO BEEN FLIRTING. iN \f3green.")
  cur_room:add(o_computer4)
 
- o_teapot = t_sign(vec(240, 128), 050, vec(15, 7))
+ o_teapot = t_sign(vec16(15, 8), 050, vec8(2, 1))
  o_teapot.tcol = 012
  o_teapot:addline(
   "iT'S A CAT-THEMED TEAPOT. " ..
@@ -1139,14 +1185,14 @@ function room_complab()
  end
  cur_room:add(o_karkat)
 
- o_cards = t_sign(vec(184, 194), 034, vec(15, 7))
+ o_cards = t_sign(vec(184, 194), 034, vec(16, 8))
  o_cards.tcol = 0
  o_cards:addline("tHESE CARDS REALLY GET LOST IN THE FLOOR. SOMEONE MIGHT SLIP AND GET HURT.")
  o_cards:addline("tHEN AGAIN THAT'S PROBABLY HOW THE GAME WOULD HAVE ENDED ANYWAY.")
  o_cards:addline("sOMEONE HAS TRIED TO PLAY SOLITAIRE WITH THEM. yOU FEEL SAD.")
  cur_room:add(o_cards)
 
- o_plush = t_sign(vec(142, 203), 032, vec(15, 15))
+ o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
  o_plush.tcol = 0
  o_plush:addline("todo gio pls add flavor text for plush in complab")
  cur_room:add(o_plush)
@@ -1172,12 +1218,14 @@ function room_lab(v)
  o_player.facing = 'r'
  cur_room:add(o_player)
 
+ local i = 0
  for y = 0, 3 do
   for x = 0, 2 do
-   o_cap = mob(vec(16*(x*3+2), 16*(y*3+4)), 076, vec(15, 23))
+   i += 1
+   o_cap = t_sign(vec((x*3+2), (y*3+4))*16, 076, vec(16, 24))
    o_cap.obstructs = true
-   o_cap.bsize = vec(15,7)
-   o_cap.anchor = vec(0, -15)
+   o_cap.bsize = vec(16,8)
+   o_cap.anchor = vec(0, -16)
    o_cap.tcol = 10
    cur_room:add(o_cap)
   end
@@ -1188,7 +1236,7 @@ function room_lab(v)
     pos=vec(104, 91)
    }))
 
- cur_room:add(newtrig(vec(124, 192), vec(4, 31), room_hallway))
+ cur_room:add(newtrig(vec(124, 192), vec8(.5, 4), room_hallway))
 
 end
 
@@ -1197,7 +1245,7 @@ function room_hallway(v)
  o_player = t_player(v or vec(14, 72))
  cur_room:add(o_player)
 
- greydoor = t_sign(vec(120, 32), 030, vec(15, 23))
+ greydoor = t_sign(vec16(7.5, 2), 030, vec8(2, 3))
  function greydoor:interact(player)
   if self.talkedto < 1 then
    self.lines = {
@@ -1211,12 +1259,12 @@ function room_hallway(v)
  end
  cur_room:add(greydoor)
 
- cur_room:add(newtrig(vec(0, 56), vec(8, 31), room_lab, {
+ cur_room:add(newtrig(vec(0, 56), vec(8, 32), room_lab, {
     facing='l',
     pos=vec(115, 208)
    }))
 
- cur_room:add(newtrig(vec(248, 56), vec(15, 31), room_stair))
+ cur_room:add(newtrig(vec(248, 56), vec(16, 32), room_stair))
 
 end
 
@@ -1226,12 +1274,12 @@ function room_stair(v)
  o_player.facing = 'r'
  cur_room:add(o_player)
 
- cur_room:add(newtrig(vec(0, 32), vec(4, 31), room_hallway, {
+ cur_room:add(newtrig(vec(0, 32), vec(4, 32), room_hallway, {
     facing='l',
     pos=vec(240, 72)
    }))
 
- o_plush = t_sign(vec(80, 141), 032, vec(15, 15))
+ o_plush = t_sign(vec(80, 141), 032, vec_spritesize*2)
  o_plush.tcol = 0
  o_plush:addline("hE MUST BE LOST.")
  o_plush:addline("fORTUNATELY HIS OWNER CAN SAFELY WALK DOWN HERE AND RETRIEVE HIM.")
@@ -1267,24 +1315,28 @@ function room_stair(v)
     sfx(000)
    end
   end)
- -- function o_gio:update()
-
- --  t_npc.update(self)
- -- end
+ function o_gio:update()
+  self.ismoving = (#dialoger.queue > 0)
+  t_npc.update(self)
+ end
  cur_room:add(o_gio)
 
- o_vue = t_sign(vec(72, 184), 010, vec(15, 15))
+ o_vue = t_sign(vec(72, 184), 010, vec_spritesize*2)
  o_vue:addline("iT LOOKS LIKE HE HAS BEEN TRYING TO COPY MEDIA FROM THE PAST INTO THE PRESENT.")
  o_vue:addline("a FOOL'S ERRAND.")
  cur_room:add(o_vue)
 
- o_great = t_button(vec(16, 96), false, vec(15, 15))
+ o_great = t_button(vec16(1, 6), false, vec_spritesize*2)
  o_great.interact = function()
   room_turbine(vec(24, 112))
  end
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
+ o_horsehole = t_sign(vec16(6, 7), false, vec_spritesize:dotp(1, 2))
+ o_horsehole:addline("tHROUGH A SMALL HOLE IN THE WALL YOU SEE A PASSAGE THAT LEADS DEEP INTO THE [???]. IT'S TOO SMALL FOR YOU TO ENTER.")
+ o_horsehole:addline("yOU HEAR A DISTANT WINNEY.")
+ cur_room:add(o_horsehole)
 -- todo through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.
 -- you hear a distant winney.
 
@@ -1295,15 +1347,15 @@ function room_turbine(v)
  o_player = t_player(v or vec(24, 112))
  cur_room:add(o_player)
 
- o_great = t_button(vec(96, 16), false, vec(15, 15))
+ o_great = t_button(vec16(6, 1), false, vec_spritesize*2)
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
- cur_room:add(newtrig(vec(16, 124), vec(15, 4), room_stair, {
+ cur_room:add(newtrig(vec8(2, 15.5), vec8(2, .5), room_stair, {
     facing='d',
     pos=vec(24, 121)
    }))
- cur_room:add(newtrig(vec(124, 32), vec(4, 15), room_roof))
+ cur_room:add(newtrig(vec8(15.5,4), vec8(.5, 2), room_roof))
 end
 
 function room_roof(v)
@@ -1311,23 +1363,23 @@ function room_roof(v)
  o_player = t_player(v or vec(16, 98))
  cur_room:add(o_player)
 
- function cur_room:update()
-  if o_player.pos.x < 32 then
-   o_player.bsize = vec(7,7)
-   o_player.shape_offset = vec(-4, -7)
-  else
-   o_player.bsize = vec(14,7)
-   o_player.shape_offset = vec(-8, -7)
-  end
-  room.update(self)
- end
+ -- function cur_room:update()
+ --  if o_player.pos.x < 32 then
+ --   o_player.bsize = vec_spritesize
+ --   o_player.shape_offset = vec(-4, -7)
+ --  else
+ --   o_player.bsize = vec(13, 8) -- a little bigger, align to grid
+ --   o_player.shape_offset = vec(-7, -7)
+ --  end
+ --  room.update(self)
+ -- end
 
- o_stair_rail = mob(vec(77, 48), nil, vec(2, 64))
+ o_stair_rail = mob(vec(78, 48), nil, vec(2, 64))
  o_stair_rail.obstructs = true
  cur_room:add(o_stair_rail)
 
- o_pogo = t_sign(vec(96, 22), 078, vec(15, 15))
- o_pogo.bsize = vec(7,7)
+ o_pogo = t_sign(vec8(11, 9), 078, vec_spritesize*2)
+ o_pogo.bsize = vec_spritesize
  o_pogo.obstructs = true
  o_pogo.tcol = 3
  o_pogo:addline("tHANKS TO THE MIRACLE OF DIGITAL TECHNOLOGY, THE POGO RIDE HAS BEEN EFFORTLESSLY PRESERVED TO THE EXACT SPECIFICATIONS OF THE DESIGNER, A FEAT UNHEARD OF IN ANY PREVIOUS ERA.")
@@ -1347,7 +1399,31 @@ function room_roof(v)
  end
  cur_room:add(o_pogo)
 
- cur_room:add(newtrig(vec(8, 88), vec(4, 15), room_turbine, {
+ o_lamppost = t_sign(vec8(14,6), 078, vec_spritesize)
+ o_lamppost.obstructs = true
+ o_lamppost.tcol = 14
+ o_lamppost:addline("iT'S THE \faLAMPPOST\f7.")
+ o_lamppost:addline(function() poke(0x5f80, true) end)
+
+ function o_lamppost:draw()
+  paltt(self.tcol)
+  spr(111, self.pos:unpack())
+  spr(110, self.pos:__sub(vec8(0,4)):unpack())
+  local line_
+  line_ = bbox(self.pos + vec(3, -25), vec(0, 25))
+  line(mrconcat({line_:unpack()}, 0))
+  line(mrconcat({line_:shift(vec(1, 0)):unpack()}, 5))
+
+  if (self.stage.mclock % 16 < 4 and rndi(6) == 0) self.flicker = true
+  if self.flicker then
+   pset(self.pos.x+3, self.pos.y-28, 9)
+   if (rndi(2) != 0) self.flicker = false
+  end
+  mob.drawdebug(self)
+ end
+ cur_room:add(o_lamppost)
+
+ cur_room:add(newtrig(vec8(1, 11), vec8(.5, 2), room_turbine, {
     facing='l',
     pos=vec(108, 41)
    }))
@@ -1377,7 +1453,7 @@ end
 
 function _init()
  prettify_map()
- room_lab()
+ room_stair()
  focus:push('player')
 end
 
@@ -1450,22 +1526,22 @@ ff17777dee771fffff17777777771fffff17777777771ffffff11d111611fffffff111111111ffff
 ff17777777771fffff17777777771fffff17777777771fffffff1dd6661fffffffff1111111fffffffffff1dd661ffff1aaa6aaaa6aaaaa13333303000333333
 fff117777711fffffff117777711fffffff117777711fffffffff11111fffffffffff111111fffffffffff11111fffff1aa611112111aaa13333330003333333
 ffff1111111fffffffff1111111fffffffff1111111fffffffff1055101fffffffff1000000fffffffffff10051fffff1a211112111111613333333333333333
-ffff1777771fffffffff1777771fffffffff1777771fffffffff1050001fffffffff1000000ffffffffff1000551ffffa21110200001121a0000000000000000
-ffff1777771fffffffff1777771fffffffff1777771fffffffff1000501fffffffff1000000ffffffffff1000501ffffa1110211111d211a0000000000000000
-ffff1777771fffffffff1777771fffffffff1777771fffffffff1015501fffffffff1000000ffffffffff1000151ffffa1112dddddd2111a0000000000000000
-ffff1777771fffffffff1777771fffffffff1777771fffffffff1511111fffffffff1511115ffffffffff1511111ffff15121111112111d10000000000000000
-fffff11111fffffffffff11111fffffffffff11111ffffffffff1555551fffffffff1551555ffffffffff155551fffff155511111211d5d10000000000000000
-fffff1fff1fffffffffff1fff1fffffffffff1fff1ffffffffff1551551ffffffff111515511ffffffffff1551ffffffa15555555555d51a0000000000000000
-fffff1fff1fffffffffff1fff1fffffffffff1fff1ffffffff10551110551ffffff0001111051fffffffff100551ffffaa115555555511aa0000000000000000
-ffff1fffff1fffffffff1fffff1ffffffffff1ffff1fffffff11111f11111ffffff1111111111fffffffff111111ffffaaaa11111111aaaa0000000000000000
+ffff1777771fffffffff1777771fffffffff1777771fffffffff1050001fffffffff1000000ffffffffff1000551ffffa21110200001121aeee01eeeeee05eee
+ffff1777771fffffffff1777771fffffffff1777771fffffffff1000501fffffffff1000000ffffffffff1000501ffffa1110211111d211ae000001eeee05eee
+ffff1777771fffffffff1777771fffffffff1777771fffffffff1015501fffffffff1000000ffffffffff1000151ffffa1112dddddd2111a00000001ee0000ee
+ffff1777771fffffffff1777771fffffffff1777771fffffffff1511111fffffffff1511115ffffffffff1511111ffff15121111112111d1e0deee0eee0000ee
+fffff11111fffffffffff11111fffffffffff11111ffffffffff1555551fffffffff1551555ffffffffff155551fffff155511111211d5d1e0da9e0ee000050e
+fffff1fff1fffffffffff1fff1fffffffffff1fff1ffffffffff1551551ffffffff111515511ffffffffff1551ffffffa15555555555d51ae0daae0eee0000ee
+fffff1fff1fffffffffff1fff1fffffffffff1fff1ffffffff10551110551ffffff0001111051fffffffff100551ffffaa115555555511aaee0000eee000050e
+ffff1fffff1fffffffff1fffff1ffffffffff1ffff1fffffff11111f11111ffffff1111111111fffffffff111111ffffaaaa11111111aaaaeee05eeee000050e
 00000000000000000000000000000000555555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-05555555555555500555555555555550111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-01111111111111100111111111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-015222222aa44510015222222aa44510000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0156bbb72284a5100156bbb72284a510000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-01560bb17219651001560bb172196510000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-015ffdcd65163510015ffdcd65163510000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-015dfdc665686510015dfdc665686510555555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+05555555555555500000000000000000111111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+01111111111111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+015222222aa445100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0156bbb72284a5100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+01560bb1721965100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+015ffdcd651635100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+015dfdc6656865100000000000000000555555550000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -1510,11 +1586,11 @@ __map__
 1c1c090809080908090809080908090809080908090809080908090809081c1c080908090809080908090809080908090000080900000000000000000000000000002727272727272737111111111111000000000000000000000000000000000000080908090809080908090809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c181918191819181918191819181918190000181900000000000000000000000000002727272727272737111111111111000000000000000000000000000000000000181918191819181918191819000000001819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c08090809080908090809080908090809000008090000000000000000000000000000272727272727273711111111111100000000000000000000000000000000000008090809080908090809080900000000010101010101240d080908090000
-1c1c191819181918191819181918191819181918191819181918191819181c1c181918191819181918191819181918190000181900000000000000000000000001272727272727272737111111111111000000000000000000000000000000000000181918191819181918191819000000000101010101240d1d181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c0809080908090809080908090809080900000809000000000000000000000000002727272727272727371111111111110000000000000000000000000000000000000809080908090809080908090100000001010101240d1d2d3d3d3d3d0100
-1c1c191819181918191819181918191819181918191819181918191819181c1c18191819181918191819181918191819000018190000000000000000000000000024363636363636363611111111111100000000000000000000000000000000000018191819181918191819181900000000010101240d1d2d3d3d3d3d3d0000
-1c1c090809080908090809080908090809080908090809080908090809081c1c00000000000000000000000000000000000008090000000000000000000000260024262626262626262611111111111100000000000000000000000000000000000008090809080908090809080900000000080908091d2d3d3d3d3d013d0000
-1c1c191819181918191819181918191819181918191819181918191819181c1c00000000000000000000000000000000000018190000000000000000000000260024020202020202020211111111111100000000000000000000000000000000000018191819181918191819181900000000181918192d3d3d3d3d3d013d0000
+1c1c191819181918191819181918191819181918191819181918191819181c1c181918191819181918191819181918190000181900000000000000000000000024272727272727272737111111111111000000000000000000000000000000000000181918191819181918191819000000000101010101240d1d181918190000
+1c1c090809080908090809080908090809080908090809080908090809081c1c0809080908090809080908090809080900000809000000000000000000000000242727272727272727371111111111110000000000000000000000000000000000000809080908090809080908090100000001010101240d1d2d3d3d3d3d0100
+1c1c191819181918191819181918191819181918191819181918191819181c1c18191819181918191819181918191819000018190000000000000000000000002424363636363636363611111111111100000000000000000000000000000000000018191819181918191819181900000000010101240d1d2d3d3d3d3d3d0000
+1c1c090809080908090809080908090809080908090809080908090809081c1c00000000000000000000000000000000000008090000000000000000000000002424262626262626262611111111111100000000000000000000000000000000000008090809080908090809080900000000080908091d2d3d3d3d3d013d0000
+1c1c191819181918191819181918191819181918191819181918191819181c1c00000000000000000000000000000000000018190000000000000000000000002424020202020202020211111111111100000000000000000000000000000000000018191819181918191819181900000000181918192d3d3d3d3d3d013d0000
 1c1c090809080908090809080908090809080908090809080908090809081c1c000000000000000000000000000000000000000000000000000000000000000100010101000000000000000000000000010000000000000000000000000000000000080908090809080908090809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c000000000000000000000000000000000000000000000000000000000000000000010101000000000000000000000000000000000000000000000000000000000000181918191819181918191819000000001819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080908090809080908090809000000000809080908090809080908090000
