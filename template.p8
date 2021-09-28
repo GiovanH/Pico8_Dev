@@ -12,9 +12,6 @@ local debug = true  -- (stat(6) == 'debug')
 -->8
 -- utility
 
-if (debug) menuitem(5,'toggle debug',function() debug = not debug end)
-if (debug) menuitem(4,'toggle airshoes',function() godshoes = not godshoes end)
-
 -- Focus stack
 -- Use this to keep track of what
 -- player input should be influencing.
@@ -131,56 +128,80 @@ end
 -- stage classes
 
 -- 2d vector
--- self ops: clone, unpack
--- vector ops: +, -, elemx()
+-- self ops: clone, unpack, flip
+-- vector ops: +, -, dotp()
 -- scalar ops: *
 local vec = obj:extend{}
 function vec:init(x, y)
  self.x, self.y =
  x or 0, y or x or 0
 end
+function vec8(x, y) return vec(x, y)*8 end
+local vec_spritesize = vec(7,7)
+local vec_spritesize = vec(8,8)
+local vec_oneone = vec(1,1)
+local vec_noneone = vec(-1,-1)
 function vec:clone() return vec(self:unpack()) end
-function vec:__add(v) return vec(self.x + v.x, self.y + v.y) end
-function vec:__sub(v) return vec(self.x - v.x, self.y - v.y) end
+function vec:flip() return vec(self.y, self.x) end
+function vec:floor() return vec(flr(self.x), flr(self.y)) end
+function vec:__add(v, y)
+ if (y) v = vec(v, y)
+ return vec(self.x + v.x, self.y + v.y)
+end
+function vec:__sub(v, y)
+ if (y) v = vec(v, y)
+ return vec(self.x - v.x, self.y - v.y)
+end
 function vec:__mul(n) return vec(self.x * n, self.y * n) end
+function vec:__div(n) return vec(self.x / n, self.y / n) end
 function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
 function vec:unpack() return self.x, self.y end
-function vec:elemx(v)
+function vec:dotp(v, y)
+ if (y) v = vec(v, y)
  -- product w/ vector
- return vec(self.x * v.x, self.y * v.y)
+ -- temporarily de-zero-index
+ local plusone = self+vec_oneone
+ return vec((plusone.x * v.x), (plusone.y * v.y))-vec_oneone
 end
-
-local vec_spritesize = vec(7,7)
 
 -- 2d bounding box
 -- self ops: clone, unpack, center (get)
 -- bbox ops: overlaps, within
--- scalar ops: *, outline, shift, grow
+-- scalar ops: *, outline, shift
 --  * multiplies size and origin
---  grow multiplies size only
 -- vector ops:
 --  maptiles(offset) (get all touching map tiles w/ info)
 --  shift (move origin by v)
+--  grow (move corner/change size by v)
 local bbox = obj:extend{}
 function bbox:init(origin, size)
  self.origin, self.size = origin, size
- local corner = origin + size
+ self.corner = origin + size
  self.x0, self.y0,
  self.x1, self.y1,
  self.w, self.h =
  origin.x, origin.y,
- corner.x, corner.y,
+ self.corner.x, self.corner.y,
  size:unpack()
 end
-function bbox:shift(v) return bbox(self.origin+b, self.size) end
+function bbox.fromxywh(x, y, w, h) return bbox(vec(x, y), vec(w, h)) end
+function bbox.pack(x0, y0, x1, y1)
+ local o = vec(x0, y0)
+ return bbox(o, vec(x1, y1)-o)
+end
+local box_screen = bbox.pack(0, 0, 128, 128)
+function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
+function bbox:shift(v) return bbox(self.origin+v, self.size) end
+function bbox:grow(v) return bbox(self.origin, self.size+v) end
 function bbox:clone() return bbox(self.origin:unpack(), self.size.unpack()) end
 function bbox:unpack() return self.x0, self.y0, self.x1, self.y1 end
 function bbox:overlaps(other)
  if (other == nil) return false
- return self.x0 <= other.x1 and other.x0 <= self.x1 and self.y0 <= other.y1 and other.y0 <= self.y1
+ return self.x0 < other.x1 and other.x0 < self.x1 and self.y0 < other.y1 and other.y0 < self.y1
 end
 function bbox:within(other)
- return self.x0 > other.x0 and self.x1 < other.x1 and self.y0 > other.y0 and self.y1 < other.y1
+ if (other == nil) return false
+ return self.x0 >= other.x0 and self.x1 <= other.x1 and self.y0 >= other.y0 and self.y1 <= other.y1
 end
 function bbox:outline(w)
  local vw = vec(w, w)
@@ -189,10 +210,8 @@ function bbox:outline(w)
   self.size + vw*2
  )
 end
-function bbox:__mul(n) return bbox(self.origin*n, self.size*n) end
-function bbox:grow(n) return bbox(self.origin, self.size*n) end
 function bbox:center()
- return self.origin + self.size*(1/2)
+ return self.origin + self.size/2
 end
 -- function bbox:itermap()
 --  -- todo document this
@@ -212,20 +231,17 @@ function bbox:maptiles(offset)
  if (offset == nil) offset = vec(0, 0)
  local ox, oy = offset:unpack()
  local tiles = {}
- for x = flr(self.x0/8), flr(self.x1/8) do
-  for y = flr(self.y0/8), flr(self.y1/8) do
+ -- Corner is outside edge, only check *within* [0, 1)
+ for x = flr(self.x0/8), flr((self.x1-1)/8) do
+  for y = flr(self.y0/8), flr((self.y1-1)/8) do
    -- dbg.print({x+ox, y+oy})
    local tpos = vec(x+ox, y+oy)
    local i = mget(tpos:unpack())
    add(tiles, {spr=i, flags=fget(i), pos=tpos})
   end
  end
- printh(tostring(tiles))
  return tiles
 end
-
-local box_screen = bbox(vec(0, 0), vec(128, 128))
-
 -- actors
 -- [1]pos: main position
 -- draw: draw function (or nop)
@@ -278,6 +294,11 @@ function mob:init(pos, ...)
  self.spr, self.size = ...
  actor.init(self, pos)
  self.bsize = self.size
+ self.shape = self:get_hitbox(self.pos)
+ printa(self.anchor, type(self.anchor))
+end
+function mob:rel_anchor(x, y)
+  self.anchor = vec(self.size.x*x, self.size.y*y)
 end
 function mob:update()
  actor.update(self)
@@ -289,13 +310,25 @@ function mob:get_hitbox(pos)
   self.bsize
  )
 end
+function mob:drawdebug()
+ if debug then
+  -- picotool issue #92 :(
+  local spx, spy = self.pos:__add(self.anchor):unpack()
+  -- print bbox and anchor/origin
+  local drawbox = self.shape:grow(vec_noneone)
+  rect(mrconcat({drawbox:unpack()}, 2))
+  line(spx, spy,
+   mrconcat({self.pos:unpack()}, 4))
+  pset(spx, spy, 10)
+ end
+end
 function mob:draw()
  -- if self.spr or self.afnim then
  if (self.tcol != nil) paltt(self.tcol)
  if (self.paltab) pal(self.paltab)
  -- caching unpack saves tokens
- local temp = (self.pos + self.anchor)  -- picotool :(
- local spx, spy = temp:unpack()
+ -- picotool issue #92 :(
+ local spx, spy = self.pos:__add(self.anchor):unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
  -- anim is a list of frames to loop
@@ -315,13 +348,7 @@ function mob:draw()
   if (self.spr != nil and self.spr != false) spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
  end
  -- end
- if debug then
-  -- print bbox and anchor/origin
-  rect(mrconcat({self.shape:unpack()}, 2))
-  line(spx, spy,
-   mrconcat({self.pos:unpack()}, 4))
-  pset(spx, spy, 5)
- end
+ self:drawdebug()
  if (self.paltab) pal()
 end
 
@@ -338,7 +365,17 @@ function particle:update()
  actor.update(self)
 end
 function particle:draw()
- pset(self.pos.x, self.pos.y, self.col)
+ if self.spr and self.size then
+  spr(self.spr, mrconcat({self.pos:unpack()}, self.size:unpack()))
+ else
+  pset(self.pos.x, self.pos.y, self.col)
+ end
+end
+function sprparticle(spr, size, ...)
+ local p = particle(...)
+ p.spr = spr
+ p.size = size
+ return p
 end
 
 -- stage
@@ -402,6 +439,152 @@ end
 
 -->8
 -- game utility
+
+function vec16(x, y) return vec(x, y)*16 end
+
+-- Interactive debugger
+-- based on work by mot ?tid=37822
+dbg=function()
+ poke(0x5f2d, 1)
+ local vars,sy={},0
+ local mx,my,mb,pb,click,mw,exp,x,y,dragx0, dragy0,mbox
+ function butn(exp,x,y)
+  local hover=mx>=x and mx<x+4 and my>=y and my<y+6
+  print(exp and "-" or "+",x,y,hover and 7 or 5)
+  return hover and click
+ end
+ function inspect(v,d)
+  d=d or 0
+  local t=type(v)
+  if t=="table" then
+   if(d>5)return "[table]"
+   local props={}
+   for key,val in pairs(v) do
+    props[key]=inspect(val,d+1)
+   end
+   return {
+    expand=false,
+    props=props
+   }
+  elseif t=="string" then
+   return chr(34)..v..chr(34)
+  elseif t=="boolean" then
+   return v and "true" or "false"
+  elseif t=="nil" or t=="function" or t=="thread" then
+   return "["..t.."]"
+  else
+   return ""..v
+  end
+ end
+ function drawvar(var,name)
+  if type(var)=="string" then
+   print(name..":",x+4,y,6)
+   print(var,x+#(""..name)*4+8,y,7)
+   y+=6
+  else
+   -- expand button
+   if(butn(var.expand,x,y))var.expand=not var.expand
+   print(name,x+4,y,12) y+=6
+   if var.expand then  -- content
+    x+=2
+    for key,val in pairs(var.props) do
+     drawvar(val,key)
+    end
+    x-=2
+   end
+  end
+ end
+ function copyuistate(src,dst)
+  if type(src)=="table" and type(dst)=="table" then
+   dst.expand=src.expand
+   for key,val in pairs(src.props) do
+    copyuistate(val,dst.props[key])
+   end
+  end
+ end
+ function watch(var,name)
+  name=name or "[var]"
+  local p,i=vars[name],inspect(var)
+  if(p)copyuistate(p,i)
+  vars[name]=i
+ end
+ function clear()
+  vars={}
+ end
+ function draw(dx,dy,w,h)
+  dx=dx or 0
+  dy=dy or 48
+  w=w or 128-dx
+  h=h or 128-dy
+  -- collapsed mode
+  if not exp then
+   dx+=w-10
+   w,h=10,5
+  end
+  -- window
+  clip(dx,dy,w,h)
+  color(1)
+  rectfill(box_screen:unpack())
+  x=dx+2 y=dy+2-sy
+
+  -- read mouse
+  mx,my,mw=stat(32),stat(33),stat(36)
+  mb=band(stat(34),1)~=0
+  click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
+  pb=mb
+
+  if exp then
+   -- variables
+   for k,v in pairs(vars) do
+    drawvar(v,k)
+   end
+   -- scrolling
+   local sh=y+sy-dy
+   sy=max(min(sy-mw*8,sh-h),0)
+  end
+  -- expand/collapse btn
+  if(butn(exp,dx+w-10,dy))exp=not exp
+  -- draw mouse ptr
+  clip()
+
+  if mb then
+   mbox = bbox.pack(dragx0, dragy0, mx, my)
+  else
+   dragx0, dragy0 = mx, my
+   mbox = nil
+  end
+  line(dragx0,dragy0,dragx0+2,dragy0,4)
+
+  line(mx,my,mx,my+2,8)
+  color(7)
+ end
+ function show()
+  exp=true
+  while exp do
+   draw()
+   flip()
+  end
+ end
+ function prnt(v,name)
+  watch(v,name)
+  show()
+ end
+
+ return{
+  watch=watch,
+  clear=clear,
+  expand=function(val)
+   if(val~=nil)exp=val
+   return exp
+  end,
+  draw=draw,
+  mbox=function() return mbox end,
+  show=show,
+  print=prnt
+ }
+end
+dbg = dbg()
+
 
 -->8
 -- game classes
