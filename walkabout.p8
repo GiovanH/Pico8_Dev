@@ -2,13 +2,24 @@ pico-8 cartridge // http://www.pico-8.com
 version 33
 __lua__
 
--- title
--- author
+-- walkabout
+-- giovan_h
 
--- todo add a choice menu to dialoger
+-- music item with disc/mp3 icon
+-- use wtk for textbox style improvement
+-- gio wink animation
 -- pico-8 coroutines, seriously
--- TODO interactive debugger extended class support
--- todo replace dialog prefix with options table
+-- fun values
+--  hallway randomizer
+--  chaos emerald chest can you find them all? (you have already found them all)
+--  lamp hint
+-- frog switch
+-- faygo vodka item
+-- fake juju (it's just a lolilpop)
+-- a modern computer, but it doesn't have magic time powers
+-- engine item to disable camera clamp (black outside)
+-- sad hussie in unreachable vent
+
 
 -- global vars
 local o_player
@@ -18,6 +29,10 @@ local debug = true  -- (stat(6) == 'debug')
 local speedshoes = false or debug
 local godshoes = false
 
+-- persistent object state
+local chest_data = {}
+local state_flags = {}
+
 -- defined sprite flags
 local flag_walkable = 0b1
 
@@ -25,14 +40,15 @@ local sfx_blip = 000
 local sfx_teleport = 001
 local sfx_creak = 002
 local sfx_itemget = 003
+local sfx_curmove = 004
 
 -->8
 -- utility
 
--- Focus stack
--- Use this to keep track of what
+-- focus stack
+-- use this to keep track of what
 -- player input should be influencing.
--- Global because dialog/others are global.
+-- global because dialog/others are global.
 -- get(), push(v), pop(expected)
 local focus = {}
 function focus:get() return self[#self] end
@@ -217,7 +233,8 @@ function bbox:overlaps(other)
  return self.x0 < other.x1 and other.x0 < self.x1 and self.y0 < other.y1 and other.y0 < self.y1
 end
 function bbox:within(other)
- return self.x0 > other.x0 and self.x1 <= other.x1 and self.y0 > other.y0 and self.y1 <= other.y1
+ if (other == nil) return false
+ return self.x0 >= other.x0 and self.x1 <= other.x1 and self.y0 >= other.y0 and self.y1 <= other.y1
 end
 function bbox:outline(w)
  local vw = vec(w, w)
@@ -247,7 +264,7 @@ function bbox:maptiles(offset)
  if (offset == nil) offset = vec(0, 0)
  local ox, oy = offset:unpack()
  local tiles = {}
- -- Corner is outside edge, only check *within* [0, 1)
+ -- corner is outside edge, only check *within* [0, 1)
  for x = flr(self.x0/8), flr((self.x1-1)/8) do
   for y = flr(self.y0/8), flr((self.y1-1)/8) do
    -- dbg.print({x+ox, y+oy})
@@ -311,6 +328,10 @@ function mob:init(pos, ...)
  actor.init(self, pos)
  self.bsize = self.size
  self.shape = self:get_hitbox(self.pos)
+ printa(self.anchor, type(self.anchor))
+end
+function mob:rel_anchor(x, y)
+  self.anchor = vec(self.size.x*x, self.size.y*y)
 end
 function mob:update()
  actor.update(self)
@@ -414,9 +435,9 @@ function stage:_zsort()
  sort(self.objects, function(a) return a.z end)
 end
 function stage:update()
- -- Update clock
+ -- update clock
  self.mclock = (self.mclock + 1) % 27720
- -- Update tasks
+ -- update tasks
  dbg.watch(self._tasks, "tasks")
  for handle, task in pairs(self._tasks) do
   task.ttl -= 1
@@ -425,7 +446,7 @@ function stage:update()
    self._tasks[handle] = nil
   end
  end
- -- Update objects
+ -- update objects
  for object in all(self.objects) do
   if object._doomed then
    -- clean up garbage
@@ -454,7 +475,7 @@ end
 
 function vec16(x, y) return vec(x, y)*16 end
 
--- Interactive debugger
+-- interactive debugger
 -- based on work by mot ?tid=37822
 dbg=function()
  poke(0x5f2d, 1)
@@ -713,7 +734,7 @@ dialoger = {
  update = function(self)
   if (self.animation_loop and costatus(self.animation_loop) != 'dead') then
    if (not self.pause_dialog) then
-    --> Resume animation if not paused
+    --> resume animation if not paused
     coresume(self.animation_loop, self)
    else
     if btnp(4) then
@@ -724,20 +745,20 @@ dialoger = {
    end
   elseif (self.animation_loop and self.current_message) then
    if (self.opts.autoplay) self.current_message = self.opts.prefix or ''
-   if (self.opts.callback) self.opts.callback()
    self.animation_loop = nil
   end
 
-  --> Not animating/displaying, and queue not empty
-  --> Finished displaying message, so pop it from queue and proceed.
+  --> not animatinf/displaying, and queue not empty
+  --> finished displaying message, so pop it from queue and proceed.
   local anim_dead = (not self.animation_loop) or costatus(self.animation_loop) == 'dead'
   if anim_dead and #self.queue > 0 then
+   focus:pop('dialog')
+   if (self.opts.callback) self.opts.callback()
    self.shift(self.queue, 1)
    if (#self.queue > 0) then
+    focus:push('dialog')
     self:trigger(self.queue[1].message, self.queue[1].opts)
     coresume(self.animation_loop, self)
-   else
-    focus:pop('dialog')
    end
   end
 
@@ -778,7 +799,7 @@ dialoger = {
 }
 
 local choicer = {
- pos=nil,
+ pos=vec(64),
  padding=nil,
  char_size=nil,
  size=nil,
@@ -802,6 +823,7 @@ local choicer = {
    width = max(width, #v[1])
   end
   self.size = self.char_size:dotp(width, #self.choices) + (self.padding*2)
+  self.size += vec(4, 0) -- cursor
   focus:push('choice')
   self.buttoncool = 4
  end,
@@ -878,7 +900,7 @@ function t_sign:addline(text)
  add(self.lines, text)
 end
 function t_sign:interact(player)
- for _, v in ipairs(self.lines or {'nO PROBLEM HERE.'}) do
+ for _, v in ipairs(self.lines or {'no problem here.'}) do
   if type(v) == 'function' then
    dialoger:enqueue('', {autoplay=true,callback=v})
   else
@@ -931,6 +953,7 @@ function t_chest:draw()
  local spx, spy = apos:unpack()
  if (self.ttl and self.ttl < 0x10) self.ttl = nil
  paltt(0)
+ if (self.paltab) pal(self.paltab)
  if self.data.open then
   spr(014, spx, spy, 2,1)
   if (self.ttl) then
@@ -946,19 +969,25 @@ function t_chest:draw()
   spr(003, spx, spy, 2,2)
  end
  mob.drawdebug(self)
+ pal()
+end
+
+function npcify(mob)
+ mob.bsize = vec8(2,1)
+ mob.anchor = vec8(0,-2)
+ mob.tcol = 15
+ mob.obstructs = true
 end
 
 local t_npc = t_sign:extend{
  facing = 'd',
  spr0 = 0,
- bsize = vec(16,8),
- obstructs = true,
- tcol = 15
 }
 function t_npc:init(...)
  t_sign:init(...)
- self.size = vec(16,24)
+ self.size = vec8(2,3)
  self.spr0 = self.spr
+ npcify(self)
 end
 function t_npc:interact(player)
  local facetable = {
@@ -968,16 +997,16 @@ function t_npc:interact(player)
   r='l'
  }
  self.facing = facetable[player.facing]
- self.ismoving = true
+ self.istalking = true
  t_sign.interact(self, player)
- dialoger:enqueue('',{callback=function() self.ismoving = false end})
+ dialoger:enqueue('',{callback=function() self.istalking = false end})
 end
 function t_npc:draw()
  self.flipx = (self.facing == 'l')
  local facemap = {d=0, u=2, l=4, r=4}
  self.spr = self.spr0 + facemap[self.facing]
- if self.ismoving and self.stage.mclock % 8 < 4 then
-  self.anchor = vec(0, -15)
+ if (self.istalking or self.ismoving) and self.stage.mclock % 8 < 4 then
+  self.anchor = vec(0, -17)
  else
   self.anchor = vec(0, -16)
  end
@@ -994,10 +1023,12 @@ function newportal(pos, dest, deststate)
  o_portal.anchor = vec(-12, 0)
  o_portal.shape_offset = vec(-12, 0)
  o_portal.tcol = 15
+ o_portal.bsize += vec(0,2)
  function o_portal:draw()
-  mob.draw(self)
   local apos = self.pos:__add(self.anchor)
+  if (self.paltab) pal(self.paltab)
   line(apos.x+6, apos.y+8, apos.x+17, apos.y+8, 1)
+  mob.draw(self)
  end
  function o_portal:spark()
   local grav = vec(0, 0.01)
@@ -1026,7 +1057,7 @@ function newportal(pos, dest, deststate)
  function o_portal:interact(p)
   if p.cooldown > 0 then
    p.cooldown += 1
-   printh('Not Portalling (cooldown)')
+   printh('not portalling (cooldown)')
    return
   end
   if p.shape:overlaps(self.shape) then
@@ -1080,10 +1111,12 @@ local t_player = mob:extend{
  cooldown = 1,
  justtriggered = true,
  paltab = {[14]=7},
- shape_offset = vec(-7, -7)
+ shape_offset = vec(-7, -6),
+ obstructs = true,
 }
 function t_player:init(pos)
  mob.init(self, pos, 64, vec(16,24))
+ mob.bsize = vec8(2,1)
  self.bsize = vec(13, 7)  -- a little smaller
 end
 function t_player:_moveif(step, facing)
@@ -1100,10 +1133,10 @@ function t_player:_moveif(step, facing)
   end
  end
  for _,obj in pairs(self.stage.objects) do
-  if (nhbox:overlaps(obj.shape) and obj.obstructs) then
-   unobstructed = false
-   break
-  end
+  if (obj == self) goto continue
+  if (nhbox:overlaps(obj.shape) and obj.obstructs) unobstructed = false; break
+  if (nhbox:within(obj.shape) and obj.deobstructs) unobstructed = true; break
+  :: continue :: 
  end
  if (facing) self.facing = facing
  if unobstructed or godshoes then
@@ -1163,8 +1196,7 @@ function t_player:tryinteract()
   )
   for _,obj in pairs(self.stage.objects) do
    if (self.ibox:overlaps(obj.shape) and obj.interact) then
-    obj:interact(self)
-    break
+    if (obj:interact(self) != false) break
    end
   end
  else
@@ -1191,7 +1223,7 @@ function t_player:draw()
  local facemap = {d=0, u=2, l=4, r=4}
  self.spr = self.spr0 + facemap[self.facing]
  if self.ismoving and self.stage.mclock % 8 < 4 then
-  self.anchor = vec(-8, -23)
+  self.anchor = vec(-8, -25)
  else
   self.anchor = vec(-8, -24)
  end
@@ -1220,6 +1252,8 @@ function room:draw()
  cls()
  local cam = self.camfocus - vec(64, 64)
  local cx0, cy0, cx1, cy1 = self.box_px:unpack()
+
+ -- clamp camera
  cam.x = clamp(cx0, cam.x, cx1-128)
  cam.y = clamp(cy0, cam.y, cy1-128)
 
@@ -1227,7 +1261,11 @@ function room:draw()
  camera(cam:unpack())
 
  dbg.watch(cam,"cam")
+ 
+ if (self.paltab) pal(self.paltab)
  map(map_x, map_y, sx, sy, cell_w, cell_h)
+ if (self.paltab) pal()
+
  stage.draw(self)
  if debug and btn(5) then
   for object in all(self.objects) do
@@ -1277,7 +1315,7 @@ function room:add(object)
 end
 
 function drawgreat(self)
- local box = bbox((self.pos + vec(0,2)), vec(16, 12))
+ local box = bbox((self.pos + vec(0,2)), vec(15, 12))
  rectfill(mrconcat({box:unpack()},2))
  fillp(0b1010101010101010)
  rectfill(mrconcat({box:unpack()},6))
@@ -1303,41 +1341,41 @@ function room_complab()
 
  o_computer1 = t_sign(vec16(1.5, 0.5), 010, vec8(2, 2))
  o_computer1:addline(
-  "tWO WHITE LINES OF TEXT ARE BLOWN UP TO FILL THE ENTIRE SCREEN.")
+  "two white lines of text are blown up to fill the entire screen.")
  o_computer1:addline(
-  "iT'S SO HUGE YOU CAN READ IT FROM ACROSS THE ROOM.")
+  "it's so huge you can read it from across the room.")
  o_computer1:addline(
-  "i WONDER WHAT IT SAYS.")
+  "i wonder what it says.")
  cur_room:add(o_computer1)
 
  o_computer2 = t_sign(vec16(5.5, 0.5), 112, vec8(2, 1))
  o_computer2:addline(
-  "lOOKS LIKE SOMEONE WAS PLANNING A FUNDRAISING CAMPAIGN FOR A VIDEO GAME.")
- o_computer2:addline("tOO BAD THEY'RE JUST A TROLL.")
+  "looks like someone was planning a fundraising campaign for a video game.")
+ o_computer2:addline("too bad they're just a troll.")
  o_computer2.bsize = vec(15,15)
  cur_room:add(o_computer2)
 
  o_computer3 = t_sign(vec(156, 9), 116, vec_spritesize)
- o_computer3:addline("iT'S AN OFF-ICE COMPUTER.")
- o_computer3:addline("yOU CAN TELL BECAUSE SOMEONE IS RUNNING TROLL POWERPOINT. iT TICKED PAST THE LAST SLIDE THOUGH.")
+ o_computer3:addline("it's an off-ice computer.")
+ o_computer3:addline("you can tell because someone is running troll powerpoint. it ticked past the last slide though.")
  o_computer3.tcol = 15
  cur_room:add(o_computer3)
 
  o_computer4 = t_sign(vec(216, 8), 010, vec8(2, 1))
  o_computer4.paltab = {[6]=3}
  o_computer4:addline(
-  "wOWIE! LOOKS LIKE SOMEBODY'S BEEN FLIRTING. iN \f3green.")
+  "wowie! looks like somebody's been flirting. in \f3green.")
  -- o_computer4:addline(
- --  "dUE TO TECHNICAL LIMITATIONS, THE KEYBOARD HAS ALSO BEEN FLIRTING. iN \f3green.")
+ --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
  cur_room:add(o_computer4)
 
  o_teapot = t_sign(vec16(15, 8), 050, vec8(2, 1))
  o_teapot.tcol = 012
  o_teapot:addline(
-  "iT'S A CAT-THEMED TEAPOT. " ..
-  "iT SEEMS OUT OF PLACE IN THIS DISTINCTLY UN-CAT-THEMED ROOM.")
+  "it's a cat-themed teapot. " ..
+  "it seems out of place in this distinctly un-cat-themed room.")
  o_teapot:addline(
-  "tHE SUGAR IS ARRANGED SO AS TO BE COPYRIGHTABLE INTELLECTUAL PROPERTY.")
+  "the sugar is arranged so as to be copyrightable intellectual property.")
  cur_room:add(o_teapot)
 
  o_karkat = t_npc(vec(64, 64), 070)
@@ -1363,9 +1401,9 @@ function room_complab()
 
  o_cards = t_sign(vec(184, 194), 034, vec(16, 8))
  o_cards.tcol = 0
- o_cards:addline("tHESE CARDS REALLY GET LOST IN THE FLOOR. SOMEONE MIGHT SLIP AND GET HURT.")
- o_cards:addline("tHEN AGAIN THAT'S PROBABLY HOW THE GAME WOULD HAVE ENDED ANYWAY.")
- o_cards:addline("sOMEONE HAS TRIED TO PLAY SOLITAIRE WITH THEM. yOU FEEL SAD.")
+ o_cards:addline("these cards really get lost in the floor. someone might slip and get hurt.")
+ o_cards:addline("then again that's probably how the game would have ended anyway.")
+ o_cards:addline("someone has tried to play solitaire with them. you feel sad.")
  cur_room:add(o_cards)
 
  o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
@@ -1374,7 +1412,7 @@ function room_complab()
  cur_room:add(o_plush)
 
  o_corner = t_sign(vec16(0,11), false, vec16(5,5))
- o_corner:addline("tHIS CORNER OF THE ROOM FEELS STRANGELY EMPTY AND UNOCCUPIED.")
+ o_corner:addline("this corner of the room feels strangely empty and unoccupied.")
  cur_room:add(o_corner)
 
  cur_room:add(newportal(center, room_t))
@@ -1483,11 +1521,11 @@ function room_hallway(v)
  function greydoor:interact(player)
   if self.talkedto < 1 then
    self.lines = {
-    "iT'S LOCKED. yOU CAN'T OPEN IT. oR, IT'S NOT LOCKED, AND YOU COULD OPEN THE DOOR. oR MAYBE SOMETHING ELSE. iS IT EVEN A DOOR?",
-    "yOU DON'T OPEN IT."
+    "it's locked. you can't open it. or, it's not locked, and you could open the door. or maybe something else. is it even a door?",
+    "you don't open it."
    }
   else
-   self.lines = {"tHE DOOR REEKS OF INDETERMINISM. "}
+   self.lines = {"the door reeks of indeterminism. "}
   end
   t_sign.interact(self, player)
  end
@@ -1515,13 +1553,13 @@ function room_stair(v)
 
  o_plush = t_sign(vec(80, 141), 032, vec_spritesize*2)
  o_plush.tcol = 0
- o_plush:addline("hE MUST BE LOST.")
- o_plush:addline("fORTUNATELY HIS OWNER CAN SAFELY WALK DOWN HERE AND RETRIEVE HIM.")
+ o_plush:addline("he must be lost.")
+ o_plush:addline("fortunately his owner can safely walk down here and retrieve him.")
  cur_room:add(o_plush)
 
  o_chest = t_chest('stair1',vec16(5, 2), 003, vec(2,2))
- o_chest.getlines = {"yOU GOT A CHEST! tHE PERFECT CONTAINER TO STORE THINGS IN.","sINCE ONLY PROTAGONISTS CAN OPEN THEM, IT'S VERY SECURE."}
- o_chest.emptylines = {"iT WAS ONLY BIG ENOUGH TO HOLD ONE CHEST."}
+ o_chest.getlines = {"you got a chest! the perfect container to store things in.","since only protagonists can open them, it's very secure."}
+ o_chest.emptylines = {"it was only big enough to hold one chest."}
  cur_room:add(o_chest)
 
  o_stair_rail = mob(vec(65, 80), nil, vec(15, 1))
@@ -1544,12 +1582,12 @@ function room_stair(v)
  o_gio = t_npc(vec(33, 206), 064)
  o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
- o_gio:addline("oH. tHERE IS A MAN HERE.")
+ o_gio:addline("oh. there is a man here.")
  o_gio:addline(function()
    if speedshoes then
-    dialoger:enqueue("yOU DO NOT GIVE HIM ANYTHING.")
+    dialoger:enqueue("you do not give him anything.")
    else
-    dialoger:enqueue("hE GAVE YOU AN ❎ BUTTON. iN ADDITION TO THE REST.")
+    dialoger:enqueue("he gave you an ❎ button. in addition to the rest.")
     speedshoes = true
     sfx(000)
    end
@@ -1562,6 +1600,8 @@ function room_stair(v)
 
  o_vue = t_sign(vec(72, 184), 122, vec8(2,1))
  o_vue.tcol = 14
+ o_vue:addline("it looks like he has been trying to copy media from the past into the present.")
+ o_vue:addline("a fool's errand.")
  cur_room:add(o_vue)
 
  o_great = t_button(vec16(1, 6), false, vec_spritesize*2)
@@ -1572,8 +1612,8 @@ function room_stair(v)
  cur_room:add(o_great)
 
  o_horsehole = t_sign(vec16(6, 7), false, vec_spritesize:dotp(1, 2))
- o_horsehole:addline("tHROUGH A SMALL HOLE IN THE WALL YOU SEE A PASSAGE THAT LEADS DEEP INTO THE [???]. IT'S TOO SMALL FOR YOU TO ENTER.")
- o_horsehole:addline("yOU HEAR A DISTANT WINNEY.")
+ o_horsehole:addline("through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.")
+ o_horsehole:addline("you hear a distant winney.")
  cur_room:add(o_horsehole)
 
 end
