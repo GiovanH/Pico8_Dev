@@ -17,8 +17,7 @@ __lua__
 -- faygo vodka item
 -- fake juju (it's just a lolilpop)
 -- a modern computer, but it doesn't have magic time powers
--- engine item to disable camera clamp (black outside)
--- sad hussie in unreachable vent
+-- depending on where you flip the switch there is a frog in a different place
 
 
 -- global vars
@@ -320,7 +319,7 @@ local mob = actor:extend{
  frame_len = 1,
  flipx = false,
  flipy = false,
- tcol = nil,
+ tcol = 0,
  paltab = nil
 }
 function mob:init(pos, ...)
@@ -916,8 +915,8 @@ local t_chest = t_sign:extend{
  obstructs=true,
  bsize = vec8(2,1),
  anchor = vec8(0,-1),
- getlines = {},
- emptylines = {}
+ getlines = {"you got a[] [???]"},
+ emptylines = {"it's empty now"}
 }
 function t_chest:init(id, pos, ispr, isize, itcol)
  t_sign:init(pos, 003, vec8(2,2))
@@ -1372,8 +1371,7 @@ function room_complab()
  o_teapot = t_sign(vec16(15, 8), 050, vec8(2, 1))
  o_teapot.tcol = 012
  o_teapot:addline(
-  "it's a cat-themed teapot. " ..
-  "it seems out of place in this distinctly un-cat-themed room.")
+  "it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.")
  o_teapot:addline(
   "the sugar is arranged so as to be copyrightable intellectual property.")
  cur_room:add(o_teapot)
@@ -1400,16 +1398,20 @@ function room_complab()
  cur_room:add(o_karkat)
 
  o_cards = t_sign(vec(184, 194), 034, vec(16, 8))
- o_cards.tcol = 0
  o_cards:addline("these cards really get lost in the floor. someone might slip and get hurt.")
  o_cards:addline("then again that's probably how the game would have ended anyway.")
  o_cards:addline("someone has tried to play solitaire with them. you feel sad.")
  cur_room:add(o_cards)
 
  o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
- o_plush.tcol = 0
  o_plush:addline("todo gio pls add flavor text for plush in complab")
  cur_room:add(o_plush)
+
+
+ o_scalemate = t_sign(vec(195, 70), 110, vec8(2,1))
+ o_scalemate:addline("todo stray scalemate")
+ cur_room:add(o_scalemate)
+
 
  o_corner = t_sign(vec16(0,11), false, vec16(5,5))
  o_corner:addline("this corner of the room feels strangely empty and unoccupied.")
@@ -1425,11 +1427,24 @@ function room_t(v)
  cur_room:add(o_player)
 
  o_chest = t_chest('t1',vec8(5, 5), 142, vec(2,2), 15)
- o_chest.getlines = {"todo scalemate lines"}
- o_chest.emptylines = {}
+ o_chest.getlines = {"you got another scalemate!" }
+ o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
  cur_room:add(o_chest)
 
- o_terezi = t_npc(vec8(9, 5), 128)
+ o_scalehang = mob(vec16(5, 3), 142, vec8(2,2))
+ o_scalehang.anchor = vec8(0,-4)
+ o_scalehang.tcol = 15
+ o_scalehang.paltab = {[3]=2, [11]=8,[12]=11}
+ function o_scalehang:draw()
+  local spx, spy = self.pos:__add(9,-16):unpack()
+  line(spx, spy, spx, spy-32, 7)
+  mob.draw(self)
+ end
+ cur_room:add(o_scalehang)
+
+ -- hanging around
+
+ o_terezi = t_npc(vec8(8, 8), 128)
  o_terezi.prefix = "\f3"
  o_terezi:addline("todo terezi dialog")
  -- function o_terezi:interact(player)
@@ -1552,7 +1567,6 @@ function room_stair(v)
    }))
 
  o_plush = t_sign(vec(80, 141), 032, vec_spritesize*2)
- o_plush.tcol = 0
  o_plush:addline("he must be lost.")
  o_plush:addline("fortunately his owner can safely walk down here and retrieve him.")
  cur_room:add(o_plush)
@@ -1688,7 +1702,7 @@ function room_turbine(v)
   cur_room:add(o_fg_rail)
  end
 
- o_andrew = t_sign(vec8(27, 11), 140, vec8(2,3))
+ o_andrew = t_sign(vec8(26, 11), 140, vec8(2,3))
  npcify(o_andrew)
  o_andrew.tcol = 14
  cur_room:add(o_andrew)
@@ -1929,7 +1943,7 @@ function room_chess(v)
  -- end
  cur_room:add(o_jade)
 
- cur_room:add(newtrig(vec8(31.5, 8), vec8(.5, 2), room_ocean, {
+ cur_room:add(newtrig(vec8(31.5, 8), vec8(.5, 3), room_ocean, {
     facing='r',
     pos=vec(39,76)
    }))
@@ -1948,6 +1962,7 @@ function _init()
    stair=room_stair,
    vent=room_turbine,
    roof=room_roof,
+   ocean=room_ocean,
    chess=room_chess
   })
  if debug then
