@@ -26,7 +26,7 @@ local o_player
 local debug = true  -- (stat(6) == 'debug')
 
 -- game state flags
-local speedshoes = false or debug
+local speedshoes = debug
 local godshoes = false
 
 -- persistent object state
@@ -43,6 +43,7 @@ local sfx_itemget = 003
 local sfx_curmove = 004
 local sfx_wink = 005
 -- local sfx_blip2 = 006
+-- local sfx_fishcatch = 007
 
 -->8
 -- utility
@@ -182,8 +183,12 @@ function vec:init(x, y)
  x or 0, y or x or 0
 end
 function vec8(x, y) return vec(x, y)*8 end
-local vec_spritesize = vec(8,8)
-local vec_oneone = vec(1,1)
+local vec_spritesize = vec(8, 8)
+local vec_16_16 = vec(16, 16)
+local vec_oneone = vec(1, 1)
+local vec_zero = vec(0, 0)
+local vec_x1 = vec(1, 0)
+local vec_y1 = vec(0, 1)
 local vec_noneone = vec(-1,-1)
 function vec:clone() return vec(self:unpack()) end
 function vec:flip() return vec(self.y, self.x) end
@@ -202,7 +207,6 @@ function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
 function vec:unpack() return self.x, self.y end
 function vec:dotp(v, y)
  if (y) v = vec(v, y)
- -- product w/ vector
  -- temporarily de-zero-index
  local plusone = self+vec_oneone
  return vec((plusone.x * v.x), (plusone.y * v.y))-vec_oneone
@@ -258,7 +262,7 @@ function bbox:center()
  return self.origin + self.size/2
 end
 function bbox:maptiles(offset)
- if (offset == nil) offset = vec(0, 0)
+ if (offset == nil) offset = vec_zero
  local ox, oy = offset:unpack()
  local tiles = {}
  -- corner is outside edge, only check *within* [0, 1)
@@ -314,7 +318,7 @@ function entity:destroy() self._doomed = true end
 -- z_is_y: auto set z to pos.y
 local actor = entity:extend{
  size = vec_spritesize,
- anchor = vec(0,0),
+ anchor = vec_zero,
  anim = nil,
  frame_len = 1,
  flipx = false,
@@ -376,7 +380,7 @@ end
 -- get_hitbox(v): hitbox is self.pos were v
 local mob = actor:extend{
  dynamic=false,
- hbox_offset = vec(0,0),
+ hbox_offset = vec_zero,
 }
 function mob:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
@@ -837,8 +841,8 @@ local dialoger = entity:extend{
 local choicer = entity:extend{
  z=4,
  upos=vec(64),
- padding=nil,
- char_size=nil,
+ padding=vec(3, 4),
+ char_size=vec(4, 5),
  size=nil,
  mclock = 0,
  selected = 1,
@@ -846,10 +850,6 @@ local choicer = entity:extend{
  prompt = function(self, choices, exopts)
   exopts = exopts or {}
   self.choices = choices
-
-  -- self.pos = pos or self.pos
-  self.padding = exopts.padding or vec(3,4)
-  self.char_size = exopts.char_size or vec(4,5)
 
   self.selected = exopts.selected or 1
   if (exopts.allowcancel) add(self.choices, {'cancel', nop})
@@ -945,13 +945,13 @@ local chest_data = {}
 local t_chest = t_sign:extend{
  id = nil,
  obstructs=true,
- bsize = vec8(2,1),
+ bsize = vec8(2, 1),
  anchor = vec8(0,-1),
  getlines = {"you got a[] [???]"},
  emptylines = {"it's empty now"}
 }
 function t_chest:init(id, pos, ispr, isize, itcol)
- t_sign.init(self, pos, 003, vec8(2,2))
+ t_sign.init(self, pos, 003, vec8(2, 2))
  self.id = id
  self.data = chest_data[id] or {
   open=false
@@ -1007,7 +1007,7 @@ function t_chest:draw()
 end
 
 function npcify(amob)
- amob.bsize = vec8(2,1)
+ amob.bsize = vec8(2, 1)
  amob.anchor = vec8(0,-2)
  amob.hbox = amob:get_hitbox()
  amob.tcol = 15
@@ -1020,7 +1020,7 @@ local t_npc = t_sign:extend{
 }
 function t_npc:init(...)
  t_sign.init(self, ...)
- self.size = vec8(2,3)
+ self.size = vec8(2, 3)
  self.spr0 = self.spr
  npcify(self)
 end
@@ -1053,13 +1053,13 @@ local t_button = mob:extend{
 }
 
 function newportal(pos, dest, deststate)
- o_portal = t_button(pos, 005, vec8(3,1), {
+ o_portal = t_button(pos, 005, vec8(3, 1), {
    anchor=vec(-12, 0), hbox_offset=vec(-12, -3)
   })
  -- o_portal.anchor = vec(-12, 0)
  -- o_portal.hbox_offset = vec(-12, 0)
  o_portal.tcol = 15
- o_portal.bsize += vec(0,3)
+ o_portal.bsize += vec(0, 3)
  o_portal.hbox = o_portal:get_hitbox()
  function o_portal:draw()
   local apos = self._apos
@@ -1145,7 +1145,7 @@ local t_player = mob:extend{
  dynamic=true
 }
 function t_player:init(pos)
- mob.init(self, pos, 64, vec(16,24),
+ mob.init(self, pos, 64, vec(16, 24),
   {bsize=vec(13, 7)})  -- a little smaller
 end
 function t_player:_moveif(step, facing)
@@ -1173,8 +1173,8 @@ function t_player:_moveif(step, facing)
 end
 function t_player:move()
  -- player movement
- local vright = vec(1, 0)
- local vdown = vec(0, 1)
+ local vright = vec_x1
+ local vdown = vec_y1
  local speed = 2
 
  if (speedshoes and btn(5)) speed = 3
@@ -1186,12 +1186,12 @@ function t_player:move()
   if (btn(0)) then
    self:_moveif(vec(-1, 0), 'l')
   elseif (btn(1)) then
-   self:_moveif(vec(1, 0), 'r')
+   self:_moveif(vec_x1, 'r')
   end
   if (btn(2)) then
    self:_moveif(vec(0, -1), 'u')
   elseif (btn(3)) then
-   self:_moveif(vec(0, 1), 'd')
+   self:_moveif(vec_y1, 'd')
   end
  end
 
@@ -1216,7 +1216,7 @@ function t_player:tryinteract()
  end
  self.justtriggered = stillintrigger
  -- try interact
- local facemap = {d=vec(0, 6),u=vec(0,-12),l=vec(-8,-4),r=vec(8,-4)}
+ local facemap = {d=vec(0, 6),u=vec(0,-12),l=vec(-12,-6),r=vec(12,-6)}
  if btnp(4) then
   self.ibox = bbox(self.hbox.origin, vec(12, 12)):shift(facemap[self.facing])
   for _,obj in pairs(self.stage.objects) do
@@ -1325,6 +1325,7 @@ function room:draw()
   --  prints(mbox.size, min(mbox.origin.x, mous.x), max(mbox.corner.y, mous.y)-6)
   -- end
   -- rect(mrconcatu(self.box_px, 10))
+
   prints('plr  ' .. tostr(o_player.pos), 0, 0)
   prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
   prints('-16' .. tostr(o_player.pos:__div(16):floor()), 68, 8)
@@ -1362,7 +1363,7 @@ cur_room = nil
 
 function room_complab()
  local center = vec16(8, 8.25)
- cur_room = room(0, 0, 2, 2)
+ cur_room = room("complab", 0, 0, 2, 2)
  o_player = t_player(center)
  cur_room:add(o_player)
 
@@ -1374,7 +1375,7 @@ function room_complab()
  }
  cur_room:add(o_computer1)
 
- o_computer2 = t_sign(vec16(5.5, 0.5), 112, vec8(2, 1), {bsize=vec16(1,1)})
+ o_computer2 = t_sign(vec8(11, 1), 112, vec8(2, 1), {bsize=vec_16_16})
  o_computer2.lines = {
   "looks like someone was planning a fundraising campaign for a video game.",
   "too bad they're just a troll."
@@ -1382,13 +1383,13 @@ function room_complab()
  cur_room:add(o_computer2)
 
  o_computer3 = t_sign(vec8(19, 1), 116, vec_spritesize, {
-  anchor=vec(4, 1), bsize=vec16(1, 1)})
+   anchor=vec(4, 1), bsize=vec_16_16})
  o_computer3.lines = {"it's an off-ice computer.", "you can tell because someone is running troll powerpoint. it ticked past the last slide though."}
  o_computer3.tcol = 15
  cur_room:add(o_computer3)
 
  o_computer4 = t_sign(vec8(27, 1), 010, vec8(2, 1), {
-  bsize=vec16(1, 1)})
+   bsize=vec_16_16})
  o_computer4.paltab = {[6]=3}
  o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green."}
  -- o_computer4:addline(
@@ -1431,11 +1432,11 @@ function room_complab()
  o_plush.lines = {"todo gio pls add flavor text for plush in complab"}
  cur_room:add(o_plush)
 
- o_scalemate = t_sign(vec(195, 70), 110, vec8(2,1))
+ o_scalemate = t_sign(vec(195, 70), 110, vec8(2, 1))
  o_scalemate.lines = {"todo stray scalemate"}
  cur_room:add(o_scalemate)
 
- o_corner = t_sign(vec16(0,11), false, vec16(5,5))
+ o_corner = t_sign(vec16(0, 11), false, vec16(5, 5))
  o_corner.lines = {"this corner of the room feels strangely empty and unoccupied."}
  cur_room:add(o_corner)
 
@@ -1448,12 +1449,12 @@ function room_t(v)
  o_player = t_player(v or vec8(3, 12))
  cur_room:add(o_player)
 
- o_chest = t_chest('t1',vec8(5, 5), 142, vec(2,2), 15)
+ o_chest = t_chest('t1',vec8(5, 5), 142, vec(2, 2), 15)
  o_chest.getlines = {"you got another scalemate!" }
  o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
  cur_room:add(o_chest)
 
- o_scalehang = actor(vec16(5, 3), 142, vec8(2,2), {
+ o_scalehang = actor(vec16(5, 3), 142, vec8(2, 2), {
    anchor = vec8(0,-4)
   })
  o_scalehang.tcol = 15
@@ -1531,10 +1532,10 @@ function room_lab(v)
   )
  end
  cur_room:add(o_switch_dial)
- o_switch_frog = mob(vec8(7, 1.5), 126, vec8(2,1))
+ o_switch_frog = mob(vec8(7, 1.5), 126, vec8(2, 1))
  cur_room:add(o_switch_frog)
 
- o_chest = t_chest('science1',vec16(2, 10), 076, vec(2,3), 10)
+ o_chest = t_chest('science1',vec16(2, 10), 076, vec(2, 3), 10)
  o_chest.getlines = {
   "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.",
   "just about big enough to squeeze into, except there's no door hole."}
@@ -1594,7 +1595,7 @@ function room_stair(v)
   "fortunately his owner can safely walk down here and retrieve him."}
  cur_room:add(o_plush)
 
- o_chest = t_chest('stair1',vec16(5, 2), 003, vec(2,2))
+ o_chest = t_chest('stair1',vec16(5, 2), 003, vec(2, 2))
  o_chest.getlines = {"you got a chest! the perfect container to store things in.","since only protagonists can open them, it's very secure."}
  o_chest.emptylines = {"it was only big enough to hold one chest."}
  cur_room:add(o_chest)
@@ -1608,7 +1609,7 @@ function room_stair(v)
   local speed = 2
   for x=1,speed do
    if (btn(0)) then
-    player:_moveif(vec(0,1))
+    player:_moveif(vec_y1)
    elseif (btn(1)) then
     player:_moveif(vec(0,-1))
    end
@@ -1630,13 +1631,12 @@ function room_stair(v)
 
        focus:push'anim'
        o_gio.facing = 'd'
-       local still = vec(0,0)
        cur_room:schedule(10, function()
          sfx(sfx_wink)
          local face = sprparticle(
           179, vec_oneone,
           o_gio._apos:__add(4, 7),  -- get this while standing still
-          vec(0.03, 0), still, 50, nil, o_gio.z+1
+          vec(0.03, 0), vec_zero, 50, nil, o_gio.z+1
          )
          face.tcol = 14
          cur_room:add(face)
@@ -1658,7 +1658,7 @@ function room_stair(v)
  cur_room:add(o_gio)
 
  o_vue = t_sign(vec(72, 184), 122, vec8(2, 1), {
-  hbox_offset=vec8(0, 1)
+   hbox_offset=vec8(0, 1)
   })
  o_vue.tcol = 14
  o_vue.lines = {"it looks like he has been trying to copy media from the past into the present.",
@@ -1684,8 +1684,8 @@ function room_turbine(v)
  o_player = t_player(v or vec(24, 112))
  cur_room:add(o_player)
 
- o_player.bsize = vec(14, 14)  -- feel cramped
- o_player.hbox_offset = vec(-7, -14)
+ o_player.bsize = vec(14, 10)  -- feel cramped
+ o_player.hbox_offset = vec(-7, -10)
 
  o_great = t_button(vec16(12, 1), false, vec_spritesize*2)
  o_great.draw = drawgreat
@@ -1751,7 +1751,7 @@ function room_turbine(v)
   cur_room:add(o_fg_rail)
  end
 
- o_andrew = t_sign(vec8(26, 11), 140, vec8(2,3))
+ o_andrew = t_sign(vec8(26, 11), 140, vec8(2, 3))
  npcify(o_andrew)
  o_andrew.tcol = 14
  cur_room:add(o_andrew)
@@ -1817,11 +1817,11 @@ function room_roof(v)
  function o_lamppost:draw()
   paltt(self.tcol)
   spr(023, self.pos:unpack())
-  spr(022, self.pos:__sub(vec8(0,4)):unpack())
+  spr(022, self.pos:__sub(vec8(0, 4)):unpack())
   local line_
   line_ = bbox(self.pos + vec(3, -25), vec(0, 25))
   line(mrconcatu(line_, 0))
-  line(mrconcatu(line_:shift(vec(1, 0)), 5))
+  line(mrconcatu(line_:shift(vec_x1), 5))
 
   if (self.stage.mclock % 16 < 4 and rndi(6) == 0) self.flicker = true
   if self.flicker then
@@ -1834,7 +1834,7 @@ function room_roof(v)
 
  cur_room:add(newtrig(vec8(1, 11), vec8(.5, 2), room_turbine, {
     facing='l',
-    pos=vec8(30,6)
+    pos=vec8(30, 6)
    }))
 end
 
@@ -1842,6 +1842,7 @@ function room_ocean(v)
  cur_room = room("ocean roof", 5, 1, 1, 1)
  o_player = t_player(v or vec(104, 40))
  cur_room:add(o_player)
+ cur_room.paltab = {[3]=5, [11]=4}
 
  o_great = t_button(vec16(6, 1), false, vec_spritesize*2)
 
@@ -1863,7 +1864,15 @@ function room_ocean(v)
    local fish = sprparticle(180, vec_oneone,
     vec8(9+rnd(2), 2), vec(-3, -4), vec(0, 0.4), 18, nil, 16)
    fish.tcol = 2
-   fish.interact = closure(sfx, sfx_fishcatch)
+   function fish:update()
+    self.hbox = bbox(self.pos, vec_spritesize)
+    particle.update(self)
+   end
+   function fish:interact()
+    sfx(007)
+    dialoger:enqueue("you caught a fish!")
+    dialoger:enqueue("but nothing happened.")
+   end
    self:add(fish)
   end
   room.update(self)
@@ -1915,14 +1924,14 @@ function room_chess(v)
   cur_room:add(o_pillar)
  end
 
- o_stalemate_w = t_sign(vec8(7, 12), 066, vec8(2,3))
+ o_stalemate_w = t_sign(vec8(7, 12), 066, vec8(2, 3))
  npcify(o_stalemate_w)
  o_stalemate_w.lines = {
   "it's a north-going prospitian.",
   "it looks like they're stuck."}
  cur_room:add(o_stalemate_w)
 
- o_stalemate_b = t_sign(vec8(7, 11), 064, vec8(2,3))
+ o_stalemate_b = t_sign(vec8(7, 11), 064, vec8(2, 3))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab={[14]=0, [7]=0, [0]=7}
  o_stalemate_b.lines = {
@@ -1935,7 +1944,7 @@ function room_chess(v)
  cur_room:add(o_stalemate_b)
 
  o_promoguy = t_npc(vec8(12.5, 7), 064)
- o_promoguy.step = vec(1, 0)
+ o_promoguy.step = vec_x1
  o_promoguy.dynamic = true
  o_promoguy.facing = 'r'
  o_promoguy.paltab={[14]=0, [7]=0, [0]=7}
@@ -1943,7 +1952,7 @@ function room_chess(v)
   self.ismoving = not self.istalking
   if not self.istalking then
    if (self.pos.x > 140) self.step = vec(-1, 0); self.facing = 'l'
-   if (self.pos.x < 100) self.step = vec(1, 0); self.facing = 'r'
+   if (self.pos.x < 100) self.step = vec_x1; self.facing = 'r'
    t_player._moveif(self, self.step, self.facing)
   end
   mob.update(self)
@@ -1962,7 +1971,7 @@ function room_chess(v)
  o_palt_portal.paltab = {[1]=7,[2]=10}
  cur_room:add(o_palt_portal)
 
- o_chest_tile = t_chest('tilechest',vec8(6, 5), 008, vec(2,2))
+ o_chest_tile = t_chest('tilechest',vec8(6, 5), 008, vec(2, 2))
  o_chest_tile.paltab = {[5]=7,[1]=6}
  o_chest_tile.getlines = {
   "you found a floor tile!",
@@ -2005,7 +2014,7 @@ function room_chess(v)
 
  cur_room:add(newtrig(vec8(31.5, 8), vec8(.5, 3), room_ocean, {
     facing='r',
-    pos=vec(39,76)
+    pos=vec(39, 76)
    }))
  cur_room:update()
 
@@ -2150,30 +2159,30 @@ fff2222222222ffffff2222112222fffffffff22222ffffffff1111111111ffffff1111111111fff
 5cccccc651111111111111158880008e2f3333ff002dd8ef77aa9980000000000000000000000000000000000000000000000000000000000000000000000000
 dd1111d651111111111111158888888eff7733f2002dc8eee9998000000000000000000000000000000000000000000000000000000000000000000000000000
 0dddddd00555111111115550eeeeeeee227722f20022222200000000000000000000000000000000000000000000000000000000000000000000000000000000
-fffff11111111ffffff1111111ffffffffffff1111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000cccccccccccccce1
-fff111111111fffffff111111111ffffffff11111111ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000cccccc1eccce0e1e
-fff111111111fffffff1111111111ffffff111111111ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000cccccce1ee0070ee
-1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000ccccccee107070ec
-1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000ccccccc1e077770c
-111111111111111f111111111111111ff11111111111111fffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000ccccccce0777770c
-111177711771111f111111111111111ff11111117771111fffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000ccccccc007077770
-11ddddd1ddddd11f111111111111111ff111111ddddd111fffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000ccc0000e07077770
-11d777d7d777d1fff11111111111111ff111171d777d11ffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000c00770ee07700770
-f1d711d7d117dfffff111111111111fff111177d711d1fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000077770ee0777700c
-ffddddd7dddddffffff1111111111fffff11177ddddd1fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000707770077770ccc
-ff1777777771fffffff1111111111ffffff1777777771fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000700777777070ccc
-fff177d6771fffffffff11111111fffffff117777d71ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff000000000000000000c0707007070ccc
-ffff177771fffffffffff111111ffffffffff177771fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000c07707007070ccc
-fff10111101fffffffff10111101fffffffff11111ffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000cc07070c07700ccc
-fff100dd001fffffffff10000001ffffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff0000000000000000cc00c00cc00ccccc
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
-fff001111001fffffff1000000001fffffff1000c1ffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
-fff011111100fffffff0011111100ffffffff11100ffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
-ff04890148880ffffff4441111448ffffffff044880fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
-ff00000f00000ffffff0000000000ffffffff000000fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
+fffff11111111ffffff1111111ffffffffffff1111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffffcccccccccccccce1
+fff111111111fffffff111111111ffffffff11111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fcccccc1eccce0e1e
+fff111111111fffffff1111111111ffffff111111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fcccccce1ee0070ee
+1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccee107070ec
+1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fccccccc1e077770c
+111111111111111f111111111111111ff11111111111111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccce0777770c
+111177711771111f111111111111111ff11111117771111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccc007077770
+11ddddd1ddddd11f111111111111111ff111111ddddd111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fccc0000e07077770
+11d777d7d777d1fff11111111111111ff111171d777d11ffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fc00770ee07700770
+f1d711d7d117dfffff111111111111fff111177d711d1fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f077770ee0777700c
+ffddddd7dddddffffff1111111111fffff11177ddddd1fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0707770077770ccc
+ff1777777771fffffff1111111111ffffff1777777771fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f0700777777070ccc
+fff177d6771fffffffff11111111fffffff117777d71ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f00c0707007070ccc
+ffff177771fffffffffff111111ffffffffff177771fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0c07707007070ccc
+fff10111101fffffffff10111101fffffffff11111ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc07070c07700ccc
+fff100dd001fffffffff10000001ffffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc00c00cc00ccccc
+fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fff001111001fffffff1000000001fffffff1000c1ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fff011111100fffffff0011111100ffffffff11100ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+ff04890148880ffffff4441111448ffffffff044880fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0000000000000000
+ff00000f00000ffffff0000000000ffffffff000000fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffff0000000000000000
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -2205,9 +2214,9 @@ __map__
 1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819797979797979797979797979123412341234123479797979797979797979790d1512240d121212121212121212121215000008090809080908090809080908090000080908090809b11a1bb208090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c08090809080908090809080908090809797979797979797979797979341234123412341279797979797979797979791d15120d1d1212121212121212121212150000181918191819181918191819181900001819181918193839393a18190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819797979797979797979797979123412341234123479797979797979797979792d15121212121212121212121212121215000008093d3d080908093d3d0809080900000809080908090809080908090000
-1c1c191819181918191819181918191819181918191819181918191819181c1c000000000000000000000000000000007979797979797979797979793412341234123412797979797979797979797900153535353535353535353535353535150000181918191819181918191819181900001819181918191819181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c000000000000000000000000000000007979797979797979797979791234123412341234797979797979797979797900153535353535353535353535353535150000080908090809080908090809000000000809080908090809080908090000
-1c1c191819181918191819181918191819181918191819181918191819181c1c000000000000000000000000000000007979797979797979797979793412341234123412797979797979797979797900153535353535353535353535353535150000181918191819181918191819000000001819181918191819181918190000
+1c1c191819181918191819181918191819181918191819181918191819181c1c000000000000000000000000000000007979797979797979797979793412341234123412797979797979797979797900153535cccd353535353535cccd3535150000181918191819181918191819181900001819181918191819181918190000
+1c1c090809080908090809080908090809080908090809080908090809081c1c000000000000000000000000000000007979797979797979797979791234123412341234797979797979797979797900151135dcdd113535351135dcdd1135150000080908090809080908090809000000000809080908090809080908090000
+1c1c191819181918191819181918191819181918191819181918191819181c1c000000000000000000000000000000007979797979797979797979793412341234123412797979797979797979797900153535eced351111351111eced3511150000181918191819181918191819000000001819181918191819181918190000
 b1292929292929292929292929292929292929292929292929292929292929b2000000000000000000000000000000007979797979797979797979797979797979797979797979797979797979797900151819151515151515151515151819150000000000000000000000000000000000000000000000000000000000000000
 383939393939393939393939393939393939393939393939393939393939393a000000000000000000000000000000003535353535353535353535353535353535353535353535353535353535353535151819151515151515151515151819150000000000000000000000000000000000000000000000000000000000000000
 __sfx__
@@ -2218,3 +2227,4 @@ __sfx__
 00020000137500d750007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700
 000400003701038030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 01080000125500d550125500f55000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
+00060000235502c5502c5000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500

@@ -12,10 +12,10 @@ local debug = true  -- (stat(6) == 'debug')
 -->8
 -- utility
 
--- Focus stack
--- Use this to keep track of what
+-- focus stack
+-- use this to keep track of what
 -- player input should be influencing.
--- Global because dialog/others are global.
+-- global because dialog/others are global.
 -- get(), push(v), pop(expected)
 local focus = {}
 function focus:get() return self[#self] end
@@ -29,13 +29,14 @@ function focus:pop(expected)
 end
 
 -- any to string (dumptable)
-function tostring(any)
- if (type(any)~="table") return tostr(any)
+function tostring(any, depth)
+ if (type(any)~="table" or depth==0) return tostr(any)
+ local nextdepth = depth and depth -1 or nil
  if (any.__tostring) return any:__tostring()
  local str = "{"
  for k,v in pairs(any) do
   if (str~="{") str=str..","
-  str=str..tostring(k).."="..tostring(v)
+  str=str..tostring(k, nextdepth).."="..tostring(v, nextdepth)
  end
  return str.."}"
 end
@@ -51,10 +52,19 @@ end
 -- multiple return concatenation
 -- > mrc({1, 2}, 3) = 1, 2, 3
 function mrconcat(t, ...)
- for i, v in ipairs({...}) do
+ for i, v in ipairs{...} do
   add(t, v)
  end
  return unpack(t)
+end
+function mrconcatu(o, ...)
+ return mrconcat({o:unpack()}, ...)
+end
+
+-- create a closure
+function closure(fn, ...)
+ local vars = {...}
+ return (function() fn(unpack(vars)) end)
 end
 
 -- reset with one transparent color
@@ -125,7 +135,7 @@ function obj:extend(proto)
 end
 
 -->8
--- stage classes
+-- math classes
 
 -- 2d vector
 -- self ops: clone, unpack, flip
@@ -137,9 +147,12 @@ function vec:init(x, y)
  x or 0, y or x or 0
 end
 function vec8(x, y) return vec(x, y)*8 end
-local vec_spritesize = vec(7,7)
-local vec_spritesize = vec(8,8)
-local vec_oneone = vec(1,1)
+local vec_spritesize = vec(8, 8)
+local vec_16_16 = vec(16, 16)
+local vec_oneone = vec(1, 1)
+local vec_zero = vec(0, 0)
+local vec_x1 = vec(1, 0)
+local vec_y1 = vec(0, 1)
 local vec_noneone = vec(-1,-1)
 function vec:clone() return vec(self:unpack()) end
 function vec:flip() return vec(self.y, self.x) end
@@ -158,7 +171,6 @@ function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
 function vec:unpack() return self.x, self.y end
 function vec:dotp(v, y)
  if (y) v = vec(v, y)
- -- product w/ vector
  -- temporarily de-zero-index
  local plusone = self+vec_oneone
  return vec((plusone.x * v.x), (plusone.y * v.y))-vec_oneone
@@ -213,28 +225,13 @@ end
 function bbox:center()
  return self.origin + self.size/2
 end
--- function bbox:itermap()
---  -- todo document this
---  local x0 = flr(self.x0)
---  local x, y = x0 - 1, flr(self.y0)
---  return function()
---   x += 1
---   if x >= self.x1 then
---    x = x0
---    y += 1
---    if (y >= self.y1) return
---   end
---   return x, y, mget(x, y)
---  end
--- end
 function bbox:maptiles(offset)
- if (offset == nil) offset = vec(0, 0)
+ if (offset == nil) offset = vec_zero
  local ox, oy = offset:unpack()
  local tiles = {}
- -- Corner is outside edge, only check *within* [0, 1)
+ -- corner is outside edge, only check *within* [0, 1)
  for x = flr(self.x0/8), flr((self.x1-1)/8) do
   for y = flr(self.y0/8), flr((self.y1-1)/8) do
-   -- dbg.print({x+ox, y+oy})
    local tpos = vec(x+ox, y+oy)
    local i = mget(tpos:unpack())
    add(tiles, {spr=i, flags=fget(i), pos=tpos})
@@ -242,93 +239,86 @@ function bbox:maptiles(offset)
  end
  return tiles
 end
--- actors
+
+-->8
+-- stage classes
+
+-- entitys
 -- [1]pos: main position
 -- draw: draw function (or nop)
 -- z: draw order
--- z_is_y: auto set z to pos.y
 -- ttl: self-destroy after n ticks if set
-local actor = obj:extend{
- draw = nop,
+local entity = obj:extend{
+ draw = nil,
+ drawui = nil,
  stage = nil,
  z = 0,
  ttl = nil,
- z_is_y = true,  -- domain: camera perspective
 }
-function actor:init(pos)
- self.pos = pos
+function entity:init(kwargs)
+ kwargs = kwargs or {}
+ self.ttl = kwargs.ttl or self.ttl
+ self.z = kwargs.z or self.z
 end
-function actor:update()
+function entity:update()
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
- if (self.z_is_y) self.z = self.pos.y
 end
-function actor:destroy() self._doomed = true end
+function entity:destroy() self._doomed = true end
 
 -- mob
 -- [1]pos: main position
 -- [2]spr: sprite top-left corner
 -- [3]size: size of sprite area to draw
--- shape_offset: vector from pos to shape
+-- [4]kwargs: table with overrides for anchor, others
 -- anchor: vector from pos to sprite
 -- anim: table of frames to repeat instead of spr
 -- frame_len: how long to show each frame in anim
 -- flipx, flipy: sprite flip booleans
 -- paltab: pallette replacement table (opt)
 -- tcol: color # to mark as transparent
--- get_hitbox(v): hitbox is self.pos were v
-local mob = actor:extend{
+-- z_is_y: auto set z to pos.y
+local actor = entity:extend{
  size = vec_spritesize,
- anchor = vec(0,0),
- shape_offset = vec(0,0),
+ anchor = vec_zero,
  anim = nil,
  frame_len = 1,
  flipx = false,
  flipy = false,
- tcol = nil,
- paltab = nil
+ tcol = 0,
+ paltab = nil,
+ z_is_y = true,  -- domain: camera perspective
 }
-function mob:init(pos, ...)
- self.spr, self.size = ...
- actor.init(self, pos)
- self.bsize = self.size
- self.shape = self:get_hitbox(self.pos)
- printa(self.anchor, type(self.anchor))
+function actor:init(pos, spr_, size, kwargs)
+ kwargs = kwargs or {}
+ self.pos, self.spr, self.size = pos, spr_, size
+ self.anchor = kwargs.anchor or self.anchor
 end
-function mob:rel_anchor(x, y)
-  self.anchor = vec(self.size.x*x, self.size.y*y)
+function actor:rel_anchor(x, y)
+ self.anchor = vec(self.size.x*x, self.size.y*y)
 end
-function mob:update()
- actor.update(self)
- self.shape = self:get_hitbox(self.pos)
-end
-function mob:get_hitbox(pos)
- return bbox(
-  pos + self.shape_offset,
-  self.bsize
- )
-end
-function mob:drawdebug()
+function actor:drawdebug()
  if debug then
   -- picotool issue #92 :(
-  local spx, spy = self.pos:__add(self.anchor):unpack()
-  -- print bbox and anchor/origin
-  local drawbox = self.shape:grow(vec_noneone)
-  rect(mrconcat({drawbox:unpack()}, 2))
+  local spx, spy = self._apos:unpack()
   line(spx, spy,
-   mrconcat({self.pos:unpack()}, 4))
-  pset(spx, spy, 10)
+   mrconcatu(self.pos, 4))
  end
 end
-function mob:draw()
+function actor:update()
+ self._apos = self.pos:__add(self.anchor)
+ if (self.z_is_y) self.z = self.pos.y
+ entity.update(self)
+end
+function actor:draw(frame)
+ local frame = frame or self.spr
  -- if self.spr or self.afnim then
- if (self.tcol != nil) paltt(self.tcol)
- if (self.paltab) pal(self.paltab)
+ pal(self.paltab)
+ paltt(self.tcol)
  -- caching unpack saves tokens
- -- picotool issue #92 :(
- local spx, spy = self.pos:__add(self.anchor):unpack()
+ local spx, spy = self._apos:unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
  -- anim is a list of frames to loop
@@ -338,35 +328,71 @@ function mob:draw()
   local findex = (flr(mclock/self.frame_len) % #self.anim) +1
   local frame = self.anim[findex]
   self._frame, self._findex = frame, findex
-
-  -- printh(tostring({i=findex, s=self.name, a=self.anim, f=frame}))
-  -- if type(frame) == "function"
-  --  frame()
-  -- else
-  if (frame != false) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
- else
-  if (self.spr != nil and self.spr != false) spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
  end
+ if (frame != false and frame != nil) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
  -- end
+ pal()
  self:drawdebug()
- if (self.paltab) pal()
+end
+
+-- mob: entity with a bounding box and dynamism
+-- init(pos, spr, size, kwargs)
+-- bsize: extent of bounding box. defaults to size
+-- kwargs can set hbox_offset and bsize
+-- dynamic: true to automatically regenerate hitbox each frame
+-- hbox_offset: vector from pos to hbox
+-- get_hitbox(v): hitbox is self.pos were v
+local mob = actor:extend{
+ dynamic=false,
+ hbox_offset = vec_zero,
+}
+function mob:init(pos, spr_, size, kwargs)
+ kwargs = kwargs or {}
+ actor.init(self, pos, spr_, size, kwargs)
+ self.bsize = kwargs.bsize or self.bsize or self.size
+ self.hbox_offset = kwargs.hbox_offset or self.hbox_offset
+ self.dynamic = kwargs.dynamic
+ self.hbox = self:get_hitbox()
+ assert(mob.bsize == nil, 'mob class bsize set')
+end
+function mob:get_hitbox(pos)
+ return bbox(
+  (pos or self.pos) + self.hbox_offset,
+  self.bsize
+ )
+end
+function mob:update()
+ actor.update(self)
+ if (self.dynamic) self.hbox = self:get_hitbox()
+end
+function mob:drawdebug()
+ if debug then
+  actor.drawdebug(self)
+  -- print bbox and anchor/origin WITHIN box
+  local drawbox = self.hbox:grow(vec_noneone)
+  rect(mrconcatu(drawbox, 2))
+ end
 end
 
 -- particle
 -- pos, vel, acc, ttl, col, z
-local particle = actor:extend{}
+local particle = entity:extend{}
 function particle:init(pos, ...)
- actor.init(self, pos)
+ -- assert(self != particle)
+ entity.init(self)
+ self.pos = pos
  self.vel, self.acc, self.ttl, self.col, self.z = ...
+ if (self.z) self.z_is_y = false
 end
 function particle:update()
  self.vel += self.acc
  self.pos += self.vel
- actor.update(self)
+ entity.update(self)
 end
 function particle:draw()
  if self.spr and self.size then
-  spr(self.spr, mrconcat({self.pos:unpack()}, self.size:unpack()))
+  paltt(self.tcol)
+  spr(self.spr, mrconcatu(self.pos, self.size:unpack()))
  else
   pset(self.pos.x, self.pos.y, self.col)
  end
@@ -389,6 +415,7 @@ end
 local stage = obj:extend{}
 function stage:init()
  self.objects = {}
+ self.uiobjects = {}
  self.mclock = 0
  self.camera = vec()  -- use for map offset
  self._tasks = {}
@@ -402,9 +429,9 @@ function stage:_zsort()
  sort(self.objects, function(a) return a.z end)
 end
 function stage:update()
- -- Update clock
+ -- update clock
  self.mclock = (self.mclock + 1) % 27720
- -- Update tasks
+ -- update tasks
  dbg.watch(self._tasks, "tasks")
  for handle, task in pairs(self._tasks) do
   task.ttl -= 1
@@ -413,7 +440,7 @@ function stage:update()
    self._tasks[handle] = nil
   end
  end
- -- Update objects
+ -- update objects
  for object in all(self.objects) do
   if object._doomed then
    -- clean up garbage
@@ -426,8 +453,14 @@ function stage:update()
 end
 function stage:draw()
  self:_zsort()
+ camera(self.cam:unpack())
  for object in all(self.objects) do
-  if (not object._doomed) object:draw()
+  -- and not object._doomed -- necessary?
+  if (object.draw) object:draw()
+ end
+ camera()  -- ui to raw screen coords
+ for object in all(self.objects) do
+  if (object.drawui) object:drawui()
  end
 end
 function stage:schedule(tics, callback)
@@ -440,9 +473,7 @@ end
 -->8
 -- game utility
 
-function vec16(x, y) return vec(x, y)*16 end
-
--- Interactive debugger
+-- interactive debugger
 -- based on work by mot ?tid=37822
 dbg=function()
  poke(0x5f2d, 1)
@@ -533,6 +564,13 @@ dbg=function()
   click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
   pb=mb
 
+  if mb then
+   mbox = bbox.pack(dragx0, dragy0, mx, my)
+  else
+   dragx0, dragy0 = mx, my
+   mbox = nil
+  end
+
   if exp then
    -- variables
    for k,v in pairs(vars) do
@@ -546,14 +584,6 @@ dbg=function()
   if(butn(exp,dx+w-10,dy))exp=not exp
   -- draw mouse ptr
   clip()
-
-  if mb then
-   mbox = bbox.pack(dragx0, dragy0, mx, my)
-  else
-   dragx0, dragy0 = mx, my
-   mbox = nil
-  end
-  line(dragx0,dragy0,dragx0+2,dragy0,4)
 
   line(mx,my,mx,my+2,8)
   color(7)
@@ -584,7 +614,6 @@ dbg=function()
  }
 end
 dbg = dbg()
-
 
 -->8
 -- game classes
