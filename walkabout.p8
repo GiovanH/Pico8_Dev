@@ -19,6 +19,8 @@ __lua__
 -- a modern computer, but it doesn't have magic time powers
 -- depending on where you flip the switch there is a frog in a different place
 
+-- keyboard prompt: ASSSUME THE POSITION
+
 -- global vars
 local o_player
 local debug = true  -- (stat(6) == 'debug')
@@ -39,6 +41,8 @@ local sfx_teleport = 001
 local sfx_creak = 002
 local sfx_itemget = 003
 local sfx_curmove = 004
+local sfx_wink = 005
+-- local sfx_blip2 = 006
 
 -->8
 -- utility
@@ -60,13 +64,14 @@ function focus:pop(expected)
 end
 
 -- any to string (dumptable)
-function tostring(any)
- if (type(any)~="table") return tostr(any)
+function tostring(any, depth)
+ if (type(any)~="table" or depth==0) return tostr(any)
+ local nextdepth = depth and depth -1 or nil
  if (any.__tostring) return any:__tostring()
  local str = "{"
  for k,v in pairs(any) do
   if (str~="{") str=str..","
-  str=str..tostring(k).."="..tostring(v)
+  str=str..tostring(k, nextdepth).."="..tostring(v, nextdepth)
  end
  return str.."}"
 end
@@ -82,16 +87,19 @@ end
 -- multiple return concatenation
 -- > mrc({1, 2}, 3) = 1, 2, 3
 function mrconcat(t, ...)
- for i, v in ipairs({...}) do
+ for i, v in ipairs{...} do
   add(t, v)
  end
  return unpack(t)
+end
+function mrconcatu(o, ...)
+ return mrconcat({o:unpack()}, ...)
 end
 
 -- create a closure
 function closure(fn, ...)
  local vars = {...}
- return (function() fn(vars:unpack()) end)
+ return (function() fn(unpack(vars)) end)
 end
 
 -- reset with one transparent color
@@ -256,7 +264,6 @@ function bbox:maptiles(offset)
  -- corner is outside edge, only check *within* [0, 1)
  for x = flr(self.x0/8), flr((self.x1-1)/8) do
   for y = flr(self.y0/8), flr((self.y1-1)/8) do
-   -- dbg.print({x+ox, y+oy})
    local tpos = vec(x+ox, y+oy)
    local i = mget(tpos:unpack())
    add(tiles, {spr=i, flags=fget(i), pos=tpos})
@@ -272,25 +279,24 @@ end
 -- [1]pos: main position
 -- draw: draw function (or nop)
 -- z: draw order
--- z_is_y: auto set z to pos.y
 -- ttl: self-destroy after n ticks if set
 local entity = obj:extend{
- draw = nop,
+ draw = nil,
+ drawui = nil,
  stage = nil,
  z = 0,
  ttl = nil,
- z_is_y = true,  -- domain: camera perspective
 }
 function entity:init(kwargs)
  kwargs = kwargs or {}
- self.ttl = kwargs.ttl or nil
+ self.ttl = kwargs.ttl or self.ttl
+ self.z = kwargs.z or self.z
 end
 function entity:update()
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
- if (self.z_is_y) self.z = self.pos.y
 end
 function entity:destroy() self._doomed = true end
 
@@ -305,6 +311,7 @@ function entity:destroy() self._doomed = true end
 -- flipx, flipy: sprite flip booleans
 -- paltab: pallette replacement table (opt)
 -- tcol: color # to mark as transparent
+-- z_is_y: auto set z to pos.y
 local actor = entity:extend{
  size = vec_spritesize,
  anchor = vec(0,0),
@@ -313,7 +320,8 @@ local actor = entity:extend{
  flipx = false,
  flipy = false,
  tcol = 0,
- paltab = nil
+ paltab = nil,
+ z_is_y = true,  -- domain: camera perspective
 }
 function actor:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
@@ -326,18 +334,23 @@ end
 function actor:drawdebug()
  if debug then
   -- picotool issue #92 :(
-  local spx, spy = self.pos:__add(self.anchor):unpack()
+  local spx, spy = self._apos:unpack()
   line(spx, spy,
-   mrconcat({self.pos:unpack()}, 4))
+   mrconcatu(self.pos, 4))
  end
+end
+function actor:update()
+ self._apos = self.pos:__add(self.anchor)
+ if (self.z_is_y) self.z = self.pos.y
+ entity.update(self)
 end
 function actor:draw(frame)
  local frame = frame or self.spr
  -- if self.spr or self.afnim then
+ pal(self.paltab)
  paltt(self.tcol)
- if (self.paltab) pal(self.paltab)
  -- caching unpack saves tokens
- local spx, spy = self.pos:__add(self.anchor):unpack()
+ local spx, spy = self._apos:unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
  -- anim is a list of frames to loop
@@ -350,7 +363,7 @@ function actor:draw(frame)
  end
  if (frame != false and frame != nil) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
  -- end
- if (self.paltab) pal()
+ pal()
  self:drawdebug()
 end
 
@@ -375,9 +388,8 @@ function mob:init(pos, spr_, size, kwargs)
  assert(mob.bsize == nil, 'mob class bsize set')
 end
 function mob:get_hitbox(pos)
- pos = pos or self.pos
  return bbox(
-  pos + self.hbox_offset,
+  (pos or self.pos) + self.hbox_offset,
   self.bsize
  )
 end
@@ -390,7 +402,7 @@ function mob:drawdebug()
   actor.drawdebug(self)
   -- print bbox and anchor/origin WITHIN box
   local drawbox = self.hbox:grow(vec_noneone)
-  rect(mrconcat({drawbox:unpack()}, 2))
+  rect(mrconcatu(drawbox, 2))
  end
 end
 
@@ -398,8 +410,11 @@ end
 -- pos, vel, acc, ttl, col, z
 local particle = entity:extend{}
 function particle:init(pos, ...)
- entity.init(self, pos)
+ -- assert(self != particle)
+ entity.init(self)
+ self.pos = pos
  self.vel, self.acc, self.ttl, self.col, self.z = ...
+ if (self.z) self.z_is_y = false
 end
 function particle:update()
  self.vel += self.acc
@@ -408,7 +423,8 @@ function particle:update()
 end
 function particle:draw()
  if self.spr and self.size then
-  spr(self.spr, mrconcat({self.pos:unpack()}, self.size:unpack()))
+  paltt(self.tcol)
+  spr(self.spr, mrconcatu(self.pos, self.size:unpack()))
  else
   pset(self.pos.x, self.pos.y, self.col)
  end
@@ -431,6 +447,7 @@ end
 local stage = obj:extend{}
 function stage:init()
  self.objects = {}
+ self.uiobjects = {}
  self.mclock = 0
  self.camera = vec()  -- use for map offset
  self._tasks = {}
@@ -447,7 +464,7 @@ function stage:update()
  -- update clock
  self.mclock = (self.mclock + 1) % 27720
  -- update tasks
- -- dbg.watch(self._tasks, "tasks")
+ dbg.watch(self._tasks, "tasks")
  for handle, task in pairs(self._tasks) do
   task.ttl -= 1
   if task.ttl <= 0 then
@@ -468,8 +485,14 @@ function stage:update()
 end
 function stage:draw()
  self:_zsort()
+ camera(self.cam:unpack())
  for object in all(self.objects) do
-  if (not object._doomed) object:draw()
+  -- and not object._doomed -- necessary?
+  if (object.draw) object:draw()
+ end
+ camera()  -- ui to raw screen coords
+ for object in all(self.objects) do
+  if (object.drawui) object:drawui()
  end
 end
 function stage:schedule(tics, callback)
@@ -575,6 +598,13 @@ dbg=function()
   click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
   pb=mb
 
+  if mb then
+   mbox = bbox.pack(dragx0, dragy0, mx, my)
+  else
+   dragx0, dragy0 = mx, my
+   mbox = nil
+  end
+
   if exp then
    -- variables
    for k,v in pairs(vars) do
@@ -588,14 +618,6 @@ dbg=function()
   if(butn(exp,dx+w-10,dy))exp=not exp
   -- draw mouse ptr
   clip()
-
-  if mb then
-   mbox = bbox.pack(dragx0, dragy0, mx, my)
-  else
-   dragx0, dragy0 = mx, my
-   mbox = nil
-  end
-  line(dragx0,dragy0,dragx0+2,dragy0,4)
 
   line(mx,my,mx,my+2,8)
   color(7)
@@ -630,7 +652,8 @@ dbg = dbg()
 -- dialog box
 -- based on work by rustybailey
 
-dialoger = {
+local dialoger = entity:extend{
+ z=-1,
  x = 8,
  y = 97,
  color = 0,
@@ -650,7 +673,7 @@ dialoger = {
    })
 
   if (#self.queue == 1) then
-   focus:push('dialog')
+   focus:push'dialog'
    self:trigger(self.queue[1].message, self.queue[1].opts)
   end
  end,
@@ -658,14 +681,15 @@ dialoger = {
   self.opts = opts
   self.current_message = opts.prefix or ''
   self.messages_by_line = nil
-  self.animation_loop = nil
   self.current_line_in_table = 1
   self.current_line_count = 1
   self.pause_dialog = false
   self:format_message(message)
+  self.animation_loop = nil
   self.animation_loop = cocreate(self.animate_text)
  end,
  format_message = function(self, message)
+  printh("format_message")
   -- sets self.messages_by_line to lines from message
   local total_msg = {}
   local word = ''
@@ -701,6 +725,7 @@ dialoger = {
   self.messages_by_line = total_msg
  end,
  animate_text = function(self)
+  printh("animate_text")
   --> sets self.current_message to partially/fully displayed text
   -- for each line, write it out letter by letter
   -- if we each the max lines, pause the coroutine
@@ -713,7 +738,7 @@ dialoger = {
     -- press btn 5 to skip to the end of the current passage
     -- otherwise, print 1 character per frame
     -- with sfx about every 5 frames
-    if (not btnp(5)) then
+    if not btnp(5) then
      if (i % 5 == 0) sfx(sfx_blip)
      yield()
     end
@@ -722,6 +747,7 @@ dialoger = {
    self.current_line_count += 1
    if ((self.current_line_count > self.max_lines) or (self.current_line_in_table == #self.messages_by_line and not self.opts.autoplay)) then
     self.pause_dialog = true
+    printa(stat(1), "animate_text pause")
     yield()
    end
   end
@@ -744,9 +770,11 @@ dialoger = {
   if (self.animation_loop and costatus(self.animation_loop) != 'dead') then
    if (not self.pause_dialog) then
     --> resume animation if not paused
+    printa(stat(1), "coresume animate_text")
     coresume(self.animation_loop, self)
    else
     if btnp(4) then
+    printa(stat(1), "update pause_dialog")
      self.pause_dialog = false
      self.current_line_count = 1
      self.current_message = self.opts.prefix
@@ -761,12 +789,13 @@ dialoger = {
   --> finished displaying message, so pop it from queue and proceed.
   local anim_dead = (not self.animation_loop) or costatus(self.animation_loop) == 'dead'
   if anim_dead and #self.queue > 0 then
-   focus:pop('dialog')
+   focus:pop'dialog'
    if (self.opts.callback) self.opts.callback()
    self.shift(self.queue, 1)
    if (#self.queue > 0) then
-    focus:push('dialog')
+    focus:push'dialog'
     self:trigger(self.queue[1].message, self.queue[1].opts)
+    printa(stat(1), "coresume animate_text (new message)")
     coresume(self.animation_loop, self)
    end
   end
@@ -776,11 +805,12 @@ dialoger = {
    if self.blinking_counter > 30 then self.blinking_counter = 0 end
   end
  end,
- draw = function(self)
+ drawui = function(self)
+  if (focus:isnt'dialog') return
   local screen_width = 128
 
   -- display message
-  if (focus:is('dialog') and self.current_message) then
+  if (self.current_message) then
    rectfill(1,90,126,126,6)
    rect(1,90,126,126,5)
    print(self.current_message, self.x, self.y, self.color)
@@ -794,11 +824,11 @@ dialoger = {
      print('◆', screen_width - 11, screen_width - 10)
     else
      -- draw arrow
-     for box in all({
-       bbox.pack(-12,-9,-8,-9),
-       bbox.pack(-11,-8,-9,-8),
-       bbox.pack(-10,-7,-10,-7)
-      }) do
+     for box in all{
+      bbox.pack(-12,-9,-8,-9),
+      bbox.pack(-11,-8,-9,-8),
+      bbox.pack(-10,-7,-10,-7)
+     } do
       line(box:shift(vec(screen_width)):unpack())
      end
     end
@@ -807,20 +837,20 @@ dialoger = {
  end
 }
 
-local choicer = {
- pos=vec(64),
+local choicer = entity:extend{
+ z=-2,
+ upos=vec(64),
  padding=nil,
  char_size=nil,
  size=nil,
  mclock = 0,
  selected = 1,
  buttoncool = 0,
- prompt = function(self, choices, pos, exopts)
-  assert(#choices > 0, 'choice table is empty or unindexed')
+ prompt = function(self, choices, exopts)
   exopts = exopts or {}
   self.choices = choices
 
-  self.pos = pos or self.pos
+  -- self.pos = pos or self.pos
   self.padding = exopts.padding or vec(3,4)
   self.char_size = exopts.char_size or vec(4,5)
 
@@ -833,17 +863,17 @@ local choicer = {
   end
   self.size = self.char_size:dotp(width, #self.choices) + (self.padding*2)
   self.size += vec(4, 0)  -- cursor
-  focus:push('choice')
+  focus:push'choice'
   self.buttoncool = 4
  end,
- draw = function(self)
+ drawui = function(self)
   if (self.choices == nil) return
-  local rbox = bbox(self.pos, self.size)
+  local rbox = bbox(self.upos, self.size)
   color(0)
   rectfill(rbox:unpack())
   color(9)
   rect(rbox:unpack())
-  local ppos = self.pos + self.padding
+  local ppos = self.upos + self.padding
   color(7)
   for i,v in ipairs(self.choices) do
    -- local print_ = i == self.selected and prints or print
@@ -853,17 +883,16 @@ local choicer = {
   print(">", ppos:__add(vec8(0,self.selected-1)):unpack())
  end,
  update = function(self)
-  -- dbg.watch(self, 'choicer')
   self.mclock += 1
   self.mclock %= 27720
-  if (focus:isnt('choice')) return
+  if (focus:isnt'choice') return
   if (self.buttoncool > 0) self.buttoncool -= 1;    return
 
   if (btnp(2)) self.selected -= 1; sfx(sfx_curmove)
   if (btnp(3)) self.selected += 1; sfx(sfx_curmove)
   self.selected = clamp(1, self.selected, #self.choices)
   if (btnp(4)) then
-   focus:pop('choice')
+   focus:pop'choice'
    self.choices[self.selected][2]()
    self.choices = nil
   end
@@ -939,14 +968,15 @@ function t_chest:interact(player)
  if not self.data.open then
   self.data['open'] = true
   sfx(sfx_itemget)
-  self.ihold = 30
-  self.ttl = 0x10 + self.ihold
-  focus:push('anim')
+  self.ihold = 0xff
+  self.ttl = 0x0f + self.ihold
+  focus:push'anim'
 
   self.stage:schedule(18, function()
-    focus:pop('anim')
+    focus:pop'anim'
     self.lines = self.getlines
     t_sign.interact(self, player)
+    dialoger:enqueue('', {callback=function() self.ttl = nil end})
    end)
  else
   self.lines = self.emptylines
@@ -954,25 +984,28 @@ function t_chest:interact(player)
  end
 end
 function t_chest:draw()
- local apos = self.pos:__add(self.anchor)
+ local apos = self._apos
  local spx, spy = apos:unpack()
- if (self.ttl and self.ttl < 0x10) self.ttl = nil
+ if (self.ttl and self.ttl < 0x0f) self.ttl = nil
  paltt(0)
- if (self.paltab) pal(self.paltab)
+ pal(self.paltab)
  if self.data.open then
   spr(014, spx, spy, 2,1)
   if (self.ttl) then
-   local age = self.ihold - (self.ttl-0x10)
-   local offset = vec(4*(2-self.isize.x),-min(12, age)-8*self.isize.y+8)
+   local self_isize = self.isize
+   local age = self.ihold - (self.ttl-0x0f)
+   -- local offset = vec(4*(2-self_isize.x),-min(12, age)-8*self_isize.y+8)
+   local offset = vec(4*(2-self_isize.x),max(-16, -age)-self_isize.y)
    local sx, sy = apos:__add(offset):unpack()
    paltt(self.itcol)
-   spr(self.ispr, sx, sy, self.isize:unpack())
+   spr(self.ispr, sx, sy, self_isize:unpack())
    paltt(0)
   end
   spr(019, spx, spy+8, 2,1)
  else
   spr(003, spx, spy, 2,2)
  end
+ pal()
  mob.drawdebug(self)
 end
 
@@ -1019,7 +1052,6 @@ function t_npc:draw()
 end
 
 local t_button = mob:extend{
- lines = nil,
  interact=nop
 }
 
@@ -1033,17 +1065,16 @@ function newportal(pos, dest, deststate)
  o_portal.bsize += vec(0,3)
  o_portal.hbox = o_portal:get_hitbox()
  function o_portal:draw()
-  local apos = self.pos:__add(self.anchor)
-  if (self.paltab) pal(self.paltab)
+  local apos = self._apos
+  pal(self.paltab)
   line(apos.x+6, apos.y+8, apos.x+17, apos.y+8, 1)
   mob.draw(self)
  end
  function o_portal:spark()
   local grav = vec(0, 0.01)
+  local p_origin = o_player._apos
+  local p_extent = p_origin + o_player.size
   for i = 0, 24 do
-   local spread = 8
-   local p_origin = o_player.pos + o_player.anchor
-   local p_extent = p_origin + o_player.size
    local point_in_plr_spr = vec(
     rndr(p_origin.x, p_extent.x),
     rndr(p_origin.y, p_extent.y)
@@ -1065,7 +1096,6 @@ function newportal(pos, dest, deststate)
  function o_portal:interact(p)
   if p.cooldown > 0 then
    p.cooldown += 1
-   printh('not portalling (cooldown)')
    return
   end
   if p.hbox:overlaps(self.hbox) then
@@ -1082,8 +1112,6 @@ function newportal(pos, dest, deststate)
      end
      o_player.cooldown = 5
      cur_room:update()  -- align camera
-     printh('portalled player to')
-     printh(o_player.pos)
     end)
   end
  end
@@ -1091,13 +1119,9 @@ function newportal(pos, dest, deststate)
 end
 
 function newtrig(pos, size, dest, deststate)
- printh('trigger')
  o_trig = mob(pos, false, size)
- printa('trig', tostring({size=o_trig.size, hbox=o_trig.hbox}))
  function o_trig:hittrigger(p)
-  if p.justtriggered then
-   return
-  end
+  if (p.justtriggered) return
   if deststate then
    dest(deststate.pos)
    o_player.facing = deststate.facing
@@ -1106,8 +1130,6 @@ function newtrig(pos, size, dest, deststate)
   end
   o_player.cooldown = 1
   cur_room:update()  -- align camera
-  printh('triggered player to')
-  printh(o_player.pos)
  end
  return o_trig
 end
@@ -1132,10 +1154,8 @@ end
 function t_player:_moveif(step, facing)
  local npos = self.pos + step
  local nhbox = self:get_hitbox(npos)
- -- self.nhbox = nhbox
  local unobstructed = nhbox:within(self.stage.box_px)
  local tiles = nhbox:maptiles(self.stage.map_origin)
- -- dbg.watch(tiles, "foottiles")
  for i,tile in pairs(tiles) do
   if band(tile.flags, flag_walkable) == 0 then
    unobstructed = false
@@ -1187,13 +1207,13 @@ function t_player:tryinteract()
   if (self.hbox:overlaps(obj.hbox) and obj.hittrigger) then
    stillintrigger = true
    obj:hittrigger(self)
-   if (not self.justtriggered) then
-    -- self just got destroyed so
-    -- this doesn't do anything:
-    self.justtriggered = true
-   -- what actually matters is
-   -- the init setting here
-   end
+   -- if (not self.justtriggered) then
+   --  -- self just got destroyed so
+   --  -- this doesn't do anything:
+   --  self.justtriggered = true
+   -- -- what actually matters is
+   -- -- the init setting here
+   -- end
    break
   end
  end
@@ -1218,7 +1238,7 @@ function t_player:update()
  self.ismoving = false
  if self.cooldown > 0 then
   self.cooldown -= 1
- elseif focus:is('player') then
+ elseif focus:is'player' then
   self:move()
   self:tryinteract()
  end
@@ -1238,8 +1258,8 @@ function t_player:draw()
   self.anchor = vec(-8, -24)
  end
  mob.draw(self)
- if (debug and self.ibox) rect(mrconcat({self.ibox:unpack()}, 10))
- if (debug and self.nhbox) rect(mrconcat({self.nhbox:unpack()}, 10))
+ if (debug and self.ibox) rect(mrconcatu(self.ibox, 10))
+ if (debug and self.nhbox) rect(mrconcatu(self.nhbox, 10))
 end
 
 local room = stage:extend{
@@ -1253,6 +1273,8 @@ function room:init(mx, my, mw, mh)
 
  self.camfocus = self.box_px:center()
  stage.init(room)
+ self:add(choicer)
+ self:add(dialoger)
 end
 function room:draw()
  local map_x, map_y = self.map_origin:unpack()
@@ -1260,6 +1282,7 @@ function room:draw()
  local sx, sy = self.box_px.origin:unpack()
 
  cls()
+ -- pal()
  local cam = self.camfocus - vec(64, 64)
  local cx0, cy0, cx1, cy1 = self.box_px:unpack()
 
@@ -1269,25 +1292,24 @@ function room:draw()
 
  -- offset by camera focus
  camera(cam:unpack())
-
- -- dbg.watch(cam,"cam")
-
- if (self.paltab) pal(self.paltab)
+ pal(self.paltab)
  map(map_x, map_y, sx, sy, cell_w, cell_h)
- if (self.paltab) pal()
+ pal()
 
- stage.draw(self)
- if debug and btn(5) then
+ if debug and btn(5) and o_player then
   for object in all(self.objects) do
    if object.pos then
-    local a,b = o_player.pos:unpack()
-    local c,d = object.pos:unpack()
-    line(a, b, c, d)
+    line(mrconcatu(o_player.pos, object.pos:unpack()))
    end
   end
  end
 
+ self.cam = cam
+ stage.draw(self)
+
+ -- camera()
  if debug and o_player then
+
   local ui_offset = cam - self.box_px.origin
   local mous = vec(stat(32), stat(33)) + ui_offset
   -- local mbox = dbg:mbox()
@@ -1302,8 +1324,7 @@ function room:draw()
   --  prints(mbox.corner, mbox.corner:unpack())
   --  prints(mbox.size, min(mbox.origin.x, mous.x), max(mbox.corner.y, mous.y)-6)
   -- end
-  -- rect(mrconcat({self.box_px:unpack()}, 10))
-  camera()  -- ui to raw screen coords
+  -- rect(mrconcatu(self.box_px, 10))
   prints('plr  ' .. tostr(o_player.pos), 0, 0)
   prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
   prints('-16' .. tostr(o_player.pos:__div(16):floor()), 68, 8)
@@ -1314,25 +1335,22 @@ function room:draw()
   prints('-16' .. tostr(mous:__div(16):floor()), 68, 24)
   line(67, 18, 67, 26)
   prints(focus:get(), 0, 64)
-
  end
- camera()
-
 end
-function room:add(object)
- object.pos += self.box_px.origin
- stage.add(self, object)
-end
+-- function room:add(object)
+--  object.pos += self.box_px.origin
+--  stage.add(self, object)
+-- end
 
 function drawgreat(self)
  local box = bbox((self.pos + vec(0,2)), vec(15, 12))
- rectfill(mrconcat({box:unpack()},2))
+ rectfill(mrconcatu(box,2))
  fillp(0b1010101010101010)
- rectfill(mrconcat({box:unpack()},6))
+ rectfill(mrconcatu(box,6))
  fillp()
- rect(mrconcat({box:unpack()},13))
- for _,x in pairs({box.x0, box.x1}) do
-  for _,y in pairs({box.y0, box.y1}) do
+ rect(mrconcatu(box,13))
+ for _,x in pairs{box.x0, box.x1} do
+  for _,y in pairs{box.y0, box.y1} do
    pset(x, y, 0)
   end
  end
@@ -1385,20 +1403,20 @@ function room_complab()
  o_karkat = t_npc(vec(64, 64), 070)
  o_karkat.prefix = "\f5"
  function o_karkat:interact(player)
-  choicer:prompt({
-    {"epilogues", function()
-      self.lines = {
-       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
-      }
-      t_npc.interact(self, player) end},
-    {"dave", function()
-      self.lines = {
-       "i have had literally one interaction with the guy and it ended up being all about vriska.",
-       "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
-       "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
-      }
-      t_npc.interact(self, player) end}
-   })
+  choicer:prompt{
+   {"epilogues", function()
+     self.lines = {
+      "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
+     }
+     t_npc.interact(self, player) end},
+   {"dave", function()
+     self.lines = {
+      "i have had literally one interaction with the guy and it ended up being all about vriska.",
+      "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
+      "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
+     }
+     t_npc.interact(self, player) end}
+  }
  end
  cur_room:add(o_karkat)
 
@@ -1452,7 +1470,7 @@ function room_t(v)
  o_terezi.prefix = "\f3"
  o_terezi.lines = {"todo terezi dialog"}
  -- function o_terezi:interact(player)
- --  choicer:prompt({
+ --  choicer:prompt{
  --    {"epilogues", function()
  --      self.lines = {
  --       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised " ..
@@ -1466,7 +1484,7 @@ function room_t(v)
  --       "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
  --      }
  --      t_npc.interact(self, player) end}
- --   })
+ --   }
  -- end
  cur_room:add(o_terezi)
 
@@ -1485,8 +1503,9 @@ function room_lab(v)
  for y = 0, 3 do
   for x = 0, 1 do
    if (y == 2 and x == 0) goto continue
-   o_cap = mob(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3))
-   npcify(o_cap)
+   o_cap = actor(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3), {
+     anchor=vec8(0,-2)
+    })
    o_cap.tcol = 10
    cur_room:add(o_cap)
    ::continue::
@@ -1496,16 +1515,16 @@ function room_lab(v)
  o_switch_dial = t_sign(vec8(7.5, 2.5), 125, vec_spritesize)
  function o_switch_dial:interact()
   function promptswitch()
-   choicer:prompt({
-     {"flip it", function()
-       state_flags['frog_flipped'] = not state_flags['frog_flipped']
-       self.flipx = state_flags.frog_flipped
-       sfx(sfx_creak)
-      end},
-     {"do not", function()
-       dialoger:enqueue("it's set correctly, you think.")
-      end}
-    })
+   choicer:prompt{
+    {"flip it", function()
+      state_flags['frog_flipped'] = not state_flags['frog_flipped']
+      self.flipx = state_flags.frog_flipped
+      sfx(sfx_creak)
+     end},
+    {"do not", function()
+      dialoger:enqueue("it's set correctly, you think.")
+     end}
+   }
   end
   dialoger:enqueue("there is a switch here with a frog. flip it?", {callback=promptswitch}
   )
@@ -1583,14 +1602,14 @@ function room_stair(v)
  o_stair_rail.obstructs = true
  cur_room:add(o_stair_rail)
 
- o_stair = mob(vec(54, 80), nil, vec(18, 44))
+ o_stair = mob(vec8(6.5, 10), nil, vec8(3, 5))
  function o_stair:hittrigger(player)
   local speed = 2
   for x=1,speed do
    if (btn(0)) then
-    player:_moveif(vec(0,2))
+    player:_moveif(vec(0,1))
    elseif (btn(1)) then
-    player:_moveif(vec(0,-2))
+    player:_moveif(vec(0,-1))
    end
   end
  end
@@ -1600,20 +1619,39 @@ function room_stair(v)
  o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
  o_gio.lines = {
+
   "oh. there is a man here.",
   function()
-   if speedshoes then
+   if false and speedshoes then
     dialoger:enqueue("you do not give him anything.")
    else
-    dialoger:enqueue("he gave you an ❎ button. in addition to the rest.")
-    -- todo wink
+    dialoger:enqueue("he gave you an ❎ button. in addition to the rest.", {callback=function()
+
+       focus:push'anim'
+       o_gio.facing = 'd'
+       local still = vec(0,0)
+       cur_room:schedule(10, function()
+         sfx(sfx_wink)
+         local face = sprparticle(
+          179, vec_oneone,
+          o_gio._apos:__add(4, 7),  -- get this while standing still
+          vec(0.03, 0), still, 50, nil, o_gio.z+1
+         )
+         face.tcol = 14
+         cur_room:add(face)
+        end)
+       cur_room:schedule(60, function()
+         focus:pop'anim'
+        end)
+
+      end})
     speedshoes = true
     sfx(000)
    end
   end
  }
  function o_gio:update()
-  self.ismoving = focus:is('dialog')
+  self.ismoving = focus:is'dialog'
   t_npc.update(self)
  end
  cur_room:add(o_gio)
@@ -1658,15 +1696,15 @@ function room_turbine(v)
   local hastileitem = chest_data['tilechest'] and chest_data['tilechest'].open
   if hastileitem and not state_flags['holefilled'] then
    function promptbridge()
-    choicer:prompt({
-      {"yes", function()
-        state_flags['holefilled'] = true
-        sfx(sfx_itemget)
-       end},
-      {"no", function()
-        dialoger:enqueue("you never know when you might need it.")
-       end}
-     })
+    choicer:prompt{
+     {"yes", function()
+       state_flags['holefilled'] = true
+       sfx(sfx_itemget)
+      end},
+     {"no", function()
+       dialoger:enqueue("you never know when you might need it.")
+      end}
+    }
    end
    dialoger:enqueue("make a bridge with the tile?", {callback=promptbridge}
    )
@@ -1685,18 +1723,18 @@ function room_turbine(v)
  end
  cur_room:add(o_hole)
 
- for fg in all({
-   {4, 6, 10},
-   {14, 8, 12},
-   {26, 6, 6},
-   {26, 12, 4}
-  }) do
+ for fg in all{
+  {4, 6, 10},
+  {14, 8, 12},
+  {26, 6, 6},
+  {26, 12, 4}
+ } do
   o_fg_rail = mob(vec8(fg[1], fg[2]), 117, vec8(fg[3], 1), {anchor=vec8(0,-1)})
   function o_fg_rail:draw()
    local width = self.hbox.w
    for x = 1, width/8 do
     paltt(0)
-    spr(self.spr, self.pos:__add(self.anchor):__add(vec8(x-1,0)):unpack())
+    spr(self.spr, self._apos:__add(vec8(x-1,0)):unpack())
    end
    mob.drawdebug(self)
   end
@@ -1755,12 +1793,12 @@ function room_roof(v)
   "it's the \falamppost\f7.",
   "quit the game?",
   function()
-   choicer:prompt({
-     {"yes", function()
-       dialoger:enqueue("i mean, nobody's stopping you.") end},
-     {"no", function()
-       dialoger:enqueue("ok cool") end},
-    })
+   choicer:prompt{
+    {"yes", function()
+      dialoger:enqueue("i mean, nobody's stopping you.") end},
+    {"no", function()
+      dialoger:enqueue("ok cool") end},
+   }
   end,
   closure(poke, 0x5f80, true)
  }
@@ -1771,8 +1809,8 @@ function room_roof(v)
   spr(022, self.pos:__sub(vec8(0,4)):unpack())
   local line_
   line_ = bbox(self.pos + vec(3, -25), vec(0, 25))
-  line(mrconcat({line_:unpack()}, 0))
-  line(mrconcat({line_:shift(vec(1, 0)):unpack()}, 5))
+  line(mrconcatu(line_, 0))
+  line(mrconcatu(line_:shift(vec(1, 0)), 5))
 
   if (self.stage.mclock % 16 < 4 and rndi(6) == 0) self.flicker = true
   if self.flicker then
@@ -1809,7 +1847,17 @@ function room_ocean(v)
  o_stair.obstructs = true
  cur_room:add(o_stair)
 
- o_decorator = entity(vec())
+ function cur_room:update()
+  if (self.mclock % 120 == 0) then
+   local fish = sprparticle(180, vec_oneone,
+    vec8(11, 2), vec(-3, -4), vec(0, 0.4), 20, nil, 16)
+   fish.tcol = 2
+   self:add(fish)
+  end
+  room.update(self)
+ end
+
+ o_decorator = entity()
  function o_decorator:draw()
   rect(8, 24, 119, 87,4)
  end
@@ -1843,7 +1891,7 @@ function room_chess(v)
  cur_room:add(o_player)
 
  function drawpillar(self)
-  local spx, spy = self.pos:__add(self.anchor):unpack()
+  local spx, spy = self._apos:unpack()
   paltt(0)
   spr(self.spr, spx, spy)
   for oy = -4,-1 do
@@ -1854,7 +1902,7 @@ function room_chess(v)
 
  end
 
- for x in all({3, 11, 20, 28}) do
+ for x in all{3, 11, 20, 28} do
   o_pillar = mob(vec8(x,14), 120, vec_spritesize)
   o_pillar.draw = drawpillar
   o_pillar.obstructs = true
@@ -1863,13 +1911,17 @@ function room_chess(v)
 
  o_stalemate_w = t_sign(vec8(7, 12), 066, vec8(2,3))
  npcify(o_stalemate_w)
- o_stalemate_w.lines = {"it's a north-going prospitian.", "it looks like they're stuck."}
+ o_stalemate_w.lines = {
+  "it's a north-going prospitian.",
+  "it looks like they're stuck."}
  cur_room:add(o_stalemate_w)
 
  o_stalemate_b = t_sign(vec8(7, 11), 064, vec8(2,3))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab={[14]=0, [7]=0, [0]=7}
- o_stalemate_b.lines = {"it's a south-going dersite.", "it looks like they're stuck."}
+ o_stalemate_b.lines = {
+  "it's a south-going dersite.",
+  "it looks like they're stuck."}
  function o_stalemate_b:interact(p)
   if (p.pos.y > 96) return false
   t_sign.interact(self)
@@ -1895,7 +1947,9 @@ function room_chess(v)
   t_npc.interact(self, p)
   dialoger:enqueue('',{callback=function() self.facing = wasfacing end})
  end
- o_promoguy.lines = {"i have to keep at it if i want to get that promotion.", "...what do you mean i'm going the wrong way?"}
+ o_promoguy.lines = {
+  "i have to keep at it if i want to get that promotion.",
+  "...what do you mean i'm going the wrong way?"}
  cur_room:add(o_promoguy)
 
  o_palt_portal = newportal(vec8(2, 9), room_complab)
@@ -1954,17 +2008,17 @@ end
 --pico-8 builtins
 
 function _init()
- roommenu_init({
-   complab=room_complab,
-   cross=room_t,
-   lab=room_lab,
-   hall=room_hallway,
-   stair=room_stair,
-   vent=room_turbine,
-   roof=room_roof,
-   ocean=room_ocean,
-   chess=room_chess
-  })
+ roommenu_init{
+  complab=room_complab,
+  cross=room_t,
+  lab=room_lab,
+  hall=room_hallway,
+  stair=room_stair,
+  vent=room_turbine,
+  roof=room_roof,
+  ocean=room_ocean,
+  chess=room_chess
+ }
  if debug then
   menuitem(5,'toggle debug',function() debug = not debug end)
 
@@ -1974,29 +2028,23 @@ function _init()
  end
 
  prettify_map()
- room_lab()
- focus:push('player')
+ -- starting room
+ room_ocean()
+ focus:push'player'
 end
 
 function _update()
  cur_room:update()
- dialoger:update()
- choicer:update()
+ -- dialoger:update()
+ -- choicer:update()
 
--- dbg.watch(dialoger,"dialoger")
--- dbg.watch(cur_room,"cur_room")
--- dbg.watch(o_player,"player")
--- dbg.watch(focus,"focus")
--- dbg.watch(cur_room.objects,"objects")
 end
 
 function _draw()
-
- pal()
  cur_room:draw()
- dialoger:draw()
- choicer:draw()
--- if (debug) dbg.draw()
+ -- dialoger:draw()
+ -- choicer:draw()
+ if (debug) dbg.draw()
 end
 __gfx__
 0011223300000000eeeeeeee009a555555519a00fffffff1111111111fffffff5000000000000005000000000000000000000000000000050000000000000000
@@ -2007,30 +2055,30 @@ __gfx__
 8899aabb00000000e266222e9a5555555555519af1221111151111511111221f0ddddddd555ddd5d015000000000051051111115001515155111111111111115
 ccddeeff00000000e222222e9a5555aaa555519af1112221111111111222111f0dddddddd555dddd015066666066051051111115051515155111111111111115
 ccddeeff00000000eeeeeeee1111111911111111fff111122222222221111fff05dddddddd555ddd015000000000051051111115151515155111111111111115
-0011111133333333666666669a555199a555519a11111111eee01eeeeee05eee055dddddddd555d601555555555555105111111515151515dddddddddddddddd
-0011111133333333666666669a5551115555519a11111111e000001eeee05eee0d55dddddddd555d01111111111111105111111515151515d66666666666666d
-2255ddff3b333333666666669a5555555555519a11111d1100000001ee0000ee0dd55dddddddd55d50000000000000005111111515151515d6dddddddddddd6d
-2255ddff33b3b333666666669a5555555555519a1111cd11e0deee0eee0000ee0ddd555ddddddddd11101115551101105111111515151515d6d6666666666d6d
-2299aa3333333333666666669a5555555555519a11cdd1d1e0da9e0ee000050e05ddd55ddddddddd10000000000000005111111515151515d6d6666666666d6d
-2299aa333333333b666666669a5555555555519addd11111e0daae0eee0000ee055ddd55dddddddd06565566666565605111111515151515d6d6666666666d6d
-3355eeee3333b3b3666666669a5555555555519a11111111ee0000eee000050e0d55ddd55ddddddd01111155555111105111111515151515d6d6666666666d6d
-3355eeee33333333666666669a5555555555519a11111111eee05eeee000050e0dd55ddddddddd6510000000000000005111111515151515d6d6666666666d6d
-0000044444440000000001dddd000000eeeeeeee666666666666666677777777000000000000000000000000000000005111111515151515d6d6666666666d6d
-0000488887884000000001d8dd000000e222222e6ccccccc666666667777777755555555555555555555555000077000511111151515151dd6d6666666666d6d
-000048484848890000d001dddd0ddd00e222002e6ccccccc6666666677777777511111111111111111111115000ff00051111115151515ddd6d6666666466d6d
-000048898777aa400ddd0111111d8d50e222222e6ccccccc666666667777777751111111111111111111111500f28f00d555555d15151dddd6d6666664646d6d
-0004848878787aa9dd8dd000001ddd55e222222e6ccccccc66666666777777775111111111111111111111150f2888f05ddd55dd1515ddddd6d666666d4d6d6d
-0048889878477aa41ddddd00001ddd50e200222e6ccccccc66666666777777775111111111111111111111150f9aaaf055ddd55d151dddddd6d666666d6d6d6d
-4484848487887a7a01ddd100001ddd00e222222e6ccccccc66666666777777775111111111111111111111150f2888f00000000015ddddddd6d6666666d66d6d
-48889888aa77aaa4001d100000115000eeeeeeee6ccccccc66666666777777775111111111111111111111150f7877f0000000001dddddddd6d6666666666d6d
-4484848aaaaaaaa9cccccccccccccccc000000005555555566666666777776670550000000000000000005600f7788700cccc000ddddddddd6d6666666666d6d
-004888aaaaaaaaa4c77cccccc00ccccc000000005555555577677767777776670d51111111111111111115d006288af0c9beac00ddddddddd6d6666666666d6d
-00048aaaaaaaafa9c77cccc00000cccc000000005555555577677767777776670d51111111111111111115d00f2aa8f0cbebbc00ddddddddd6d6666666666d6d
-00009aaaaaaf4a4077cc0c0fffff0c0c000000005555555577677767777776670dd555555555555555555dd00f2888f0cebbec00ddddddddd6d6666666666d6d
-000004aaaaa9000077cc00f0f0fff0c00000000055555555776777677777766705ddd5555ddd55ddddddddd00f2228f0cabe9c20ddddddddd6d6666666666d6d
-0000009aaf400000c77cc0f000fff0c000000000555555557767776777777667055ddd5555ddd55dddddddd0022002200cccc889ddddddddd6d6666666666d6d
-00000004a9000000c77ccc0f0fff0c0c000000005555555566666666777776670d5dddd555ddddddddddd6600000000000002884dddddddd66d6666666666d66
-0000000a4a000000ccccccc00000cccc0000000055555555777777777777766700000000000000000000000000000000000002e0dddddddddddddddddddddddd
+0011111133333333666666669a555199a555519a11111111eee01eeeeee05eee055dddddddd555d6015555555555551051111115151515155555555555555555
+0011111133333333666666669a5551115555519a11111111e000001eeee05eee0d55dddddddd555d011111111111111051111115151515155666666666666665
+2255ddff3b333333666666669a5555555555519a11111d1100000001ee0000ee0dd55dddddddd55d500000000000000051111115151515155655555555555565
+2255ddff33b3b333666666669a5555555555519a1111cd11e0deee0eee0000ee0ddd555ddddddddd11101115551101105111111515151515565dddddddddd565
+2299aa3333333333666666669a5555555555519a11cdd1d1e0da9e0ee000050e05ddd55ddddddddd10000000000000005111111515151515565d66666666d565
+2299aa333333333b666666669a5555555555519addd11111e0daae0eee0000ee055ddd55dddddddd06565566666565605111111515151515565d6dddddd6d565
+3355eeee3333b3b3666666669a5555555555519a11111111ee0000eee000050e0d55ddd55ddddddd01111155555111105111111515151515565d6d6dd6d6d565
+3355eeee33333333666666669a5555555555519a11111111eee05eeee000050e0dd55ddddddddd6510000000000000005111111515151515565d6d6dd6d6d565
+0000044444440000000001dddd000000eeeeeeee666666666666666677777777000000000000000000000000000000005111111515151515565d6d6dd6d6d565
+0000488887884000000001d8dd000000e222222e6ccccccc666666667777777755555555555555555555555000077000511111151515151d565d6d6dd6d6d565
+000048484848890000d001dddd0ddd00e222002e6ccccccc6666666677777777511111111111111111111115000ff00051111115151515dd565d6d6dd646d565
+000048898777aa400ddd0111111d8d50e222222e6ccccccc666666667777777751111111111111111111111500f28f00d555555d15151ddd565d6d6dd464d565
+0004848878787aa9dd8dd000001ddd55e222222e6ccccccc66666666777777775111111111111111111111150f2888f05ddd55dd1515dddd565d6d6dd545d565
+0048889878477aa41ddddd00001ddd50e200222e6ccccccc66666666777777775111111111111111111111150f9aaaf055ddd55d151ddddd565d6d6dd565d565
+4484848487887a7a01ddd100001ddd00e222222e6ccccccc66666666777777775111111111111111111111150f2888f00000000015dddddd565d6d6dd656d565
+48889888aa77aaa4001d100000115000eeeeeeee6ccccccc66666666777777775111111111111111111111150f7877f0000000001ddddddd565d6d6dd6d6d565
+4484848aaaaaaaa9cccccccccccccccc000000005555555566666666777776670550000000000000000005600f7788700cccc000dddddddd565d6d6dd6d6d565
+004888aaaaaaaaa4c77cccccc00ccccc000000005555555577677767777776670d51111111111111111115d006288af0c9beac00dddddddd565d6d6dd6d6d565
+00048aaaaaaaafa9c77cccc00000cccc000000005555555577677767777776670d51111111111111111115d00f2aa8f0cbebbc00dddddddd565d6d6dd6d6d565
+00009aaaaaaf4a4077cc0c0fffff0c0c000000005555555577677767777776670dd555555555555555555dd00f2888f0cebbec00dddddddd565d6d6dd6d6d565
+000004aaaaa9000077cc00f0f0fff0c00000000055555555776777677777766705ddd5555ddd55ddddddddd00f2228f0cabe9c20dddddddd565d6dddddd6d565
+0000009aaf400000c77cc0f000fff0c000000000555555557767776777777667055ddd5555ddd55dddddddd0022002200cccc889dddddddd565d66666666d565
+00000004a9000000c77ccc0f0fff0c0c000000005555555566666666777776670d5dddd555ddddddddddd6600000000000002884dddddddd665dddddddddd566
+0000000a4a000000ccccccc00000cccc0000000055555555777777777777766700000000000000000000000000000000000002e0dddddddd5565555555555655
 fffffffffffffffffffffffffffffffffffffffffffffffffffff1fffffffffffffff1fffffffffffffffff1ffffffffaaaa11111111aaaa3333333333333333
 ffffffffffffffffffffffffffffffffffffffffffffffffffff11f111111fffffff111111111fffffffff11f11111ffaa111111111111aa3333333331111333
 ffffffffffffffffffffffffffffffffffffffffffffffffff1111111111fffffff11111111111ffffff1111111111ffa11111111111111a333333331bbbb133
@@ -2087,14 +2135,14 @@ fffff000000fffffffff10000001fffffffff10000ffffffffff12888281ffffffff12288881ffff
 fffff000000fffffffff10000001ffffffffff0001ffffffffff12882221ffffffff12228881ffffffff1888211fffffeeee0ddddd0eeeee0000000000000000
 fff2488224882ffffff4441111488fffffffff88842ffffffff0555110555ffffff0001281055ffffff182215001ffffee01dd0001dd0eee0000000000000000
 fff2222222222ffffff2222112222fffffffff22222ffffffff1111111111ffffff1111111111ffffff111111111ffffee00000e00000eee0000000000000000
-06666660511111155111111500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-50000006511111155111111500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-5d666665511111111111111500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-50cccc06511111111111111500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-5cccccc6511111111111111500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-5cccccc6511111111111111500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-dd1111d6511111111111111500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0dddddd0055511111111555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0666666051111115511111158888888e22ff27220000000000009800000000000000000000000000000000000000000000000000000000000000000000000000
+5000000651111115511111158888888e7733772200000008aaa9a800000000000000000000000000000000000000000000000000000000000000000000000000
+5d66666551111111111111150088808e7073772200ddd8ff7aa99800000000000000000000000000000000000000000000000000000000000000000000000000
+50cccc0651111111111111158888888e7773732202dcd8f887a99980000000000000000000000000000000000000000000000000000000000000000000000000
+5cccccc651111111111111158808880ef333332200ddd8f887aa9a80000000000000000000000000000000000000000000000000000000000000000000000000
+5cccccc651111111111111158880008e2f3333ff002dd8ef77aa9980000000000000000000000000000000000000000000000000000000000000000000000000
+dd1111d651111111111111158888888eff7733f2002dc8eee9998000000000000000000000000000000000000000000000000000000000000000000000000000
+0dddddd00555111111115550eeeeeeee227722f20022222200000000000000000000000000000000000000000000000000000000000000000000000000000000
 fffff11111111ffffff1111111ffffffffffff1111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
 fff111111111fffffff111111111ffffffff11111111ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
 fff111111111fffffff1111111111ffffff111111111ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
@@ -2132,38 +2180,38 @@ __map__
 1c1c191819181918191819181918191819181918191819181918191819181c1c000000000809080908090809000000000000181918191819181918191819181975757575757575751819181918191819000026262626262626261111111111110101181918191819181918191819000018191819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c757575751819181918191819757575750000080900000000000000000000080908090809000008090809000000000000000027272727272727371111111111110101080908090809080908090809000008090809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c353535350809080908090809353535350000181900000000000000000000181918191819000018191819000000000000000027272727272727371111111111110101181918191819181918191819000018191819181918191819181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c727335351819181918191819353572730000080900000000000000000000000000000000000000000000000000000000000027272727272727371111111111110000080908090809080908090809000000000809080908090809080908090000
+1c1c090809080908090809080908090809080908090809080908090809081c1c72733535181918191819181935357273000008090000000000000000000000000000000000000000000000000000000000002727272727272737111111111111000008093d3d080908093d3d0809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000000000000000000000000000027272727272727371111111111110000181918191819181918191819000000001819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000000000008090809000000002727272727272737111111111111000008090809080908090809080900000000010101010101240d080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000000000000181918190000242727272727272727371111111111110000181918191819181918191819000000000101010101240d1d181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c1819181918191819181918191819181900000809000000000000000000000000000000000000000000000000000000002427272727272727273711111111111100000809080908090809080908090100000001010101240d1d2d3d3d3d3d0100
 1c1c191819181918191819181918191819181918191819181918191819181c1c08090809080908090809080908090809000018190000000000000000000000000000000000000000000000000000000024243636363636363636111111111111000018191819181918191819181900000000010101240d1d2d3d3d3d3d3d0000
-1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000000000000000000000024242626262626262626111111111111000008090809080908090809080900000000080908091d2d3d3d3d3d013d0000
+1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000000000000000000000024242626262626262626111111111111000008093d3d080908093d3d080900000000080908091d2d3d3d3d3d013d0000
 1c1c191819181918191819181918191819181918191819181918191819181c1c00000000000000000000000000000000000018190000000000000000000000000000000000000000000000000000000024240202020202020202111111111111000018191819181918191819181900000000181918192d3d72733d3d013d0000
 1c1c090809080908090809080908090809080908090809080908090809081c1c000000000000000000000000000000000000007600000000000000760000000000000000760000000000000076000000151515151515151515151515151515150000080908090809080908090809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c0000000000000000000000000000000000000077000000000000007700000000000000007700000000000000770000001515151515151515151515153d3d15150000181918191819181918191819000000001819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c7575757575757575757575757575757500000077000000000000007700000000000000007700000000000000770000001515151515151515151515151e1f15150000080908090809080908090809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c3535353535353535353535353535353500000077000000000000007700000000000000007700000000000000770000001512121212121212121212123e3f12150000181918191819181918191819000000001819181918191819181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c353535353535351e1f353535353535350000007700000000000000770000000000000000770000000000000077000000151212121212121212121212121212150000080908090809080908090809000000000809080908090809080908090000
+1c1c090809080908090809080908090809080908090809080908090809081c1c353535353535351e1f35353535353535000000770000000000000077000000000000000077000000000000007700000015121212121212121212121212121215000008093d3d080908093d3d0809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c353535353535352e2f353535353535357979797879797979797979787979797979797979787979797979797978797900151212121212121212121212121212150000181918191819181918191819000000001819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c353535353535353e3f353535353535357979797979797979797979791234123412341234797979797979797979797900151212121212121212121212121212150000080908090809080908090809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c08090809080908090809080908090809797979797979797979797979341234123412341279797979797979797979790015121212121212121212121212121215000018191819181918191819181900000000181918191819280a0b2a18190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819797979797979797979797979123412341234123479797979797979797979790d1512240d121212121212121212121215000008090809080908090809080908090000080908090809b11a1bb208090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c08090809080908090809080908090809797979797979797979797979341234123412341279797979797979797979791d15120d1d1212121212121212121212150000181918191819181918191819181900001819181918193839393a18190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819797979797979797979797979123412341234123479797979797979797979792d151212121212121212121212121212150000080908090809080908090809080900000809080908090809080908090000
+1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819797979797979797979797979123412341234123479797979797979797979792d15121212121212121212121212121215000008093d3d080908093d3d0809080900000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c000000000000000000000000000000007979797979797979797979793412341234123412797979797979797979797900153535353535353535353535353535150000181918191819181918191819181900001819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c000000000000000000000000000000007979797979797979797979791234123412341234797979797979797979797900153535353535353535353535353535150000080908090809080908090809000000000809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c000000000000000000000000000000007979797979797979797979793412341234123412797979797979797979797900153535353535353535353535353535150000181918191819181918191819000000001819181918191819181918190000
 b1292929292929292929292929292929292929292929292929292929292929b2000000000000000000000000000000007979797979797979797979797979797979797979797979797979797979797900151819151515151515151515151819150000000000000000000000000000000000000000000000000000000000000000
 383939393939393939393939393939393939393939393939393939393939393a000000000000000000000000000000003535353535353535353535353535353535353535353535353535353535353535151819151515151515151515151819150000000000000000000000000000000000000000000000000000000000000000
 __sfx__
-000600000605001050060500305018000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010600000605001050060500305018000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 090600000305007050040500605003050060520605600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000900000363000650006000160000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600
 000a00001b050180501b0502005020050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00020000137500d750007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700
-001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000400003701038030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+01080000125500d550125500f55000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
