@@ -19,7 +19,6 @@ __lua__
 -- a modern computer, but it doesn't have magic time powers
 -- depending on where you flip the switch there is a frog in a different place
 
-
 -- global vars
 local o_player
 local debug = true  -- (stat(6) == 'debug')
@@ -87,6 +86,12 @@ function mrconcat(t, ...)
   add(t, v)
  end
  return unpack(t)
+end
+
+-- create a closure
+function closure(fn, ...)
+ local vars = {...}
+ return (function() fn(vars:unpack()) end)
 end
 
 -- reset with one transparent color
@@ -157,7 +162,7 @@ function obj:extend(proto)
 end
 
 -->8
--- stage classes
+-- math classes
 
 -- 2d vector
 -- self ops: clone, unpack, flip
@@ -169,7 +174,6 @@ function vec:init(x, y)
  x or 0, y or x or 0
 end
 function vec8(x, y) return vec(x, y)*8 end
-local vec_spritesize = vec(7,7)
 local vec_spritesize = vec(8,8)
 local vec_oneone = vec(1,1)
 local vec_noneone = vec(-1,-1)
@@ -245,20 +249,6 @@ end
 function bbox:center()
  return self.origin + self.size/2
 end
--- function bbox:itermap()
---  -- todo document this
---  local x0 = flr(self.x0)
---  local x, y = x0 - 1, flr(self.y0)
---  return function()
---   x += 1
---   if x >= self.x1 then
---    x = x0
---    y += 1
---    if (y >= self.y1) return
---   end
---   return x, y, mget(x, y)
---  end
--- end
 function bbox:maptiles(offset)
  if (offset == nil) offset = vec(0, 0)
  local ox, oy = offset:unpack()
@@ -274,47 +264,50 @@ function bbox:maptiles(offset)
  end
  return tiles
 end
--- actors
+
+-->8
+-- stage classes
+
+-- entitys
 -- [1]pos: main position
 -- draw: draw function (or nop)
 -- z: draw order
 -- z_is_y: auto set z to pos.y
 -- ttl: self-destroy after n ticks if set
-local actor = obj:extend{
+local entity = obj:extend{
  draw = nop,
  stage = nil,
  z = 0,
  ttl = nil,
  z_is_y = true,  -- domain: camera perspective
 }
-function actor:init(pos)
- self.pos = pos
+function entity:init(kwargs)
+ kwargs = kwargs or {}
+ self.ttl = kwargs.ttl or nil
 end
-function actor:update()
+function entity:update()
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
  if (self.z_is_y) self.z = self.pos.y
 end
-function actor:destroy() self._doomed = true end
+function entity:destroy() self._doomed = true end
 
 -- mob
 -- [1]pos: main position
 -- [2]spr: sprite top-left corner
 -- [3]size: size of sprite area to draw
--- shape_offset: vector from pos to shape
+-- [4]kwargs: table with overrides for anchor, others
 -- anchor: vector from pos to sprite
 -- anim: table of frames to repeat instead of spr
 -- frame_len: how long to show each frame in anim
 -- flipx, flipy: sprite flip booleans
 -- paltab: pallette replacement table (opt)
 -- tcol: color # to mark as transparent
--- get_hitbox(v): hitbox is self.pos were v
-local mob = actor:extend{
+local actor = entity:extend{
  size = vec_spritesize,
  anchor = vec(0,0),
- shape_offset = vec(0,0),
  anim = nil,
  frame_len = 1,
  flipx = false,
@@ -322,44 +315,28 @@ local mob = actor:extend{
  tcol = 0,
  paltab = nil
 }
-function mob:init(pos, ...)
- self.spr, self.size = ...
- actor.init(self, pos)
- self.bsize = self.size
- self.shape = self:get_hitbox(self.pos)
- printa(self.anchor, type(self.anchor))
+function actor:init(pos, spr_, size, kwargs)
+ kwargs = kwargs or {}
+ self.pos, self.spr, self.size = pos, spr_, size
+ self.anchor = kwargs.anchor or self.anchor
 end
-function mob:rel_anchor(x, y)
-  self.anchor = vec(self.size.x*x, self.size.y*y)
+function actor:rel_anchor(x, y)
+ self.anchor = vec(self.size.x*x, self.size.y*y)
 end
-function mob:update()
- actor.update(self)
- self.shape = self:get_hitbox(self.pos)
-end
-function mob:get_hitbox(pos)
- return bbox(
-  pos + self.shape_offset,
-  self.bsize
- )
-end
-function mob:drawdebug()
+function actor:drawdebug()
  if debug then
   -- picotool issue #92 :(
   local spx, spy = self.pos:__add(self.anchor):unpack()
-  -- print bbox and anchor/origin
-  local drawbox = self.shape:grow(vec_noneone)
-  rect(mrconcat({drawbox:unpack()}, 2))
   line(spx, spy,
    mrconcat({self.pos:unpack()}, 4))
-  pset(spx, spy, 10)
  end
 end
-function mob:draw()
+function actor:draw(frame)
+ local frame = frame or self.spr
  -- if self.spr or self.afnim then
- if (self.tcol != nil) paltt(self.tcol)
+ paltt(self.tcol)
  if (self.paltab) pal(self.paltab)
  -- caching unpack saves tokens
- -- picotool issue #92 :(
  local spx, spy = self.pos:__add(self.anchor):unpack()
  local spw, sph = self.size:unpack()
  spw, sph = ceil(spw/8), ceil(sph/8)
@@ -370,31 +347,64 @@ function mob:draw()
   local findex = (flr(mclock/self.frame_len) % #self.anim) +1
   local frame = self.anim[findex]
   self._frame, self._findex = frame, findex
-
-  -- printh(tostring({i=findex, s=self.name, a=self.anim, f=frame}))
-  -- if type(frame) == "function"
-  --  frame()
-  -- else
-  if (frame != false) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
- else
-  if (self.spr != nil and self.spr != false) spr(self.spr, spx, spy, spw, sph, self.flipx, self.flipy)
  end
+ if (frame != false and frame != nil) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
  -- end
- self:drawdebug()
  if (self.paltab) pal()
+ self:drawdebug()
+end
+
+-- mob: entity with a bounding box and dynamism
+-- init(pos, spr, size, kwargs)
+-- bsize: extent of bounding box. defaults to size
+-- kwargs can set hbox_offset and bsize
+-- dynamic: true to automatically regenerate hitbox each frame
+-- hbox_offset: vector from pos to hbox
+-- get_hitbox(v): hitbox is self.pos were v
+local mob = actor:extend{
+ dynamic=false,
+ hbox_offset = vec(0,0),
+}
+function mob:init(pos, spr_, size, kwargs)
+ kwargs = kwargs or {}
+ actor.init(self, pos, spr_, size, kwargs)
+ self.bsize = kwargs.bsize or self.bsize or self.size
+ self.hbox_offset = kwargs.hbox_offset or self.hbox_offset
+ self.dynamic = kwargs.dynamic
+ self.hbox = self:get_hitbox()
+ assert(mob.bsize == nil, 'mob class bsize set')
+end
+function mob:get_hitbox(pos)
+ pos = pos or self.pos
+ return bbox(
+  pos + self.hbox_offset,
+  self.bsize
+ )
+end
+function mob:update()
+ actor.update(self)
+ if (self.dynamic) self.hbox = self:get_hitbox()
+end
+function mob:drawdebug()
+ if debug then
+  actor.drawdebug(self)
+  -- print bbox and anchor/origin WITHIN box
+  local drawbox = self.hbox:grow(vec_noneone)
+  rect(mrconcat({drawbox:unpack()}, 2))
+ end
 end
 
 -- particle
 -- pos, vel, acc, ttl, col, z
-local particle = actor:extend{}
+local particle = entity:extend{}
 function particle:init(pos, ...)
- actor.init(self, pos)
+ entity.init(self, pos)
  self.vel, self.acc, self.ttl, self.col, self.z = ...
 end
 function particle:update()
  self.vel += self.acc
  self.pos += self.vel
- actor.update(self)
+ entity.update(self)
 end
 function particle:draw()
  if self.spr and self.size then
@@ -437,7 +447,7 @@ function stage:update()
  -- update clock
  self.mclock = (self.mclock + 1) % 27720
  -- update tasks
- dbg.watch(self._tasks, "tasks")
+ -- dbg.watch(self._tasks, "tasks")
  for handle, task in pairs(self._tasks) do
   task.ttl -= 1
   if task.ttl <= 0 then
@@ -822,7 +832,7 @@ local choicer = {
    width = max(width, #v[1])
   end
   self.size = self.char_size:dotp(width, #self.choices) + (self.padding*2)
-  self.size += vec(4, 0) -- cursor
+  self.size += vec(4, 0)  -- cursor
   focus:push('choice')
   self.buttoncool = 4
  end,
@@ -843,7 +853,7 @@ local choicer = {
   print(">", ppos:__add(vec8(0,self.selected-1)):unpack())
  end,
  update = function(self)
-  dbg.watch(self, 'choicer')
+  -- dbg.watch(self, 'choicer')
   self.mclock += 1
   self.mclock %= 27720
   if (focus:isnt('choice')) return
@@ -894,10 +904,6 @@ local t_sign = mob:extend{
  prefix = '',
  talkedto = 0
 }
-function t_sign:addline(text)
- if (self.lines == nil) self.lines = {}
- add(self.lines, text)
-end
 function t_sign:interact(player)
  for _, v in ipairs(self.lines or {'no problem here.'}) do
   if type(v) == 'function' then
@@ -919,7 +925,7 @@ local t_chest = t_sign:extend{
  emptylines = {"it's empty now"}
 }
 function t_chest:init(id, pos, ispr, isize, itcol)
- t_sign:init(pos, 003, vec8(2,2))
+ t_sign.init(self, pos, 003, vec8(2,2))
  self.id = id
  self.data = chest_data[id] or {
   open=false
@@ -968,14 +974,14 @@ function t_chest:draw()
   spr(003, spx, spy, 2,2)
  end
  mob.drawdebug(self)
- pal()
 end
 
-function npcify(mob)
- mob.bsize = vec8(2,1)
- mob.anchor = vec8(0,-2)
- mob.tcol = 15
- mob.obstructs = true
+function npcify(amob)
+ amob.bsize = vec8(2,1)
+ amob.anchor = vec8(0,-2)
+ amob.hbox = amob:get_hitbox()
+ amob.tcol = 15
+ amob.obstructs = true
 end
 
 local t_npc = t_sign:extend{
@@ -983,7 +989,7 @@ local t_npc = t_sign:extend{
  spr0 = 0,
 }
 function t_npc:init(...)
- t_sign:init(...)
+ t_sign.init(self, ...)
  self.size = vec8(2,3)
  self.spr0 = self.spr
  npcify(self)
@@ -1018,11 +1024,14 @@ local t_button = mob:extend{
 }
 
 function newportal(pos, dest, deststate)
- o_portal = t_button(pos, 005, vec8(3,1))
- o_portal.anchor = vec(-12, 0)
- o_portal.shape_offset = vec(-12, 0)
+ o_portal = t_button(pos, 005, vec8(3,1), {
+   anchor=vec(-12, 0), hbox_offset=vec(-12, -3)
+  })
+ -- o_portal.anchor = vec(-12, 0)
+ -- o_portal.hbox_offset = vec(-12, 0)
  o_portal.tcol = 15
- o_portal.bsize += vec(0,2)
+ o_portal.bsize += vec(0,3)
+ o_portal.hbox = o_portal:get_hitbox()
  function o_portal:draw()
   local apos = self.pos:__add(self.anchor)
   if (self.paltab) pal(self.paltab)
@@ -1059,7 +1068,7 @@ function newportal(pos, dest, deststate)
    printh('not portalling (cooldown)')
    return
   end
-  if p.shape:overlaps(self.shape) then
+  if p.hbox:overlaps(self.hbox) then
    self:spark()
    p:destroy()
    sfx(sfx_teleport)
@@ -1082,7 +1091,9 @@ function newportal(pos, dest, deststate)
 end
 
 function newtrig(pos, size, dest, deststate)
- o_trig = mob(pos, nil, size)
+ printh('trigger')
+ o_trig = mob(pos, false, size)
+ printa('trig', tostring({size=o_trig.size, hbox=o_trig.hbox}))
  function o_trig:hittrigger(p)
   if p.justtriggered then
    return
@@ -1110,13 +1121,13 @@ local t_player = mob:extend{
  cooldown = 1,
  justtriggered = true,
  paltab = {[14]=7},
- shape_offset = vec(-7, -6),
+ hbox_offset = vec(-7, -6),
  obstructs = true,
+ dynamic=true
 }
 function t_player:init(pos)
- mob.init(self, pos, 64, vec(16,24))
- mob.bsize = vec8(2,1)
- self.bsize = vec(13, 7)  -- a little smaller
+ mob.init(self, pos, 64, vec(16,24),
+  {bsize=vec(13, 7)})  -- a little smaller
 end
 function t_player:_moveif(step, facing)
  local npos = self.pos + step
@@ -1124,7 +1135,7 @@ function t_player:_moveif(step, facing)
  -- self.nhbox = nhbox
  local unobstructed = nhbox:within(self.stage.box_px)
  local tiles = nhbox:maptiles(self.stage.map_origin)
- dbg.watch(tiles, "foottiles")
+ -- dbg.watch(tiles, "foottiles")
  for i,tile in pairs(tiles) do
   if band(tile.flags, flag_walkable) == 0 then
    unobstructed = false
@@ -1133,9 +1144,9 @@ function t_player:_moveif(step, facing)
  end
  for _,obj in pairs(self.stage.objects) do
   if (obj == self) goto continue
-  if (nhbox:overlaps(obj.shape) and obj.obstructs) unobstructed = false; break
-  if (nhbox:within(obj.shape) and obj.deobstructs) unobstructed = true; break
-  :: continue :: 
+  if (nhbox:overlaps(obj.hbox) and obj.obstructs) unobstructed = false; break
+  if (nhbox:within(obj.hbox) and obj.deobstructs) unobstructed = true; break
+  ::continue::
  end
  if (facing) self.facing = facing
  if unobstructed or godshoes then
@@ -1173,7 +1184,7 @@ function t_player:tryinteract()
  -- passive triggers
  local stillintrigger = false
  for _,obj in pairs(self.stage.objects) do
-  if (self.shape:overlaps(obj.shape) and obj.hittrigger) then
+  if (self.hbox:overlaps(obj.hbox) and obj.hittrigger) then
    stillintrigger = true
    obj:hittrigger(self)
    if (not self.justtriggered) then
@@ -1194,7 +1205,7 @@ function t_player:tryinteract()
    self.pos + self.anchor - vec(0, -8) + facemap[self.facing]*8, vec_spritesize*2
   )
   for _,obj in pairs(self.stage.objects) do
-   if (self.ibox:overlaps(obj.shape) and obj.interact) then
+   if (self.ibox:overlaps(obj.hbox) and obj.interact) then
     if (obj:interact(self) != false) break
    end
   end
@@ -1214,7 +1225,7 @@ function t_player:update()
 
  self.stage.camfocus = self.pos
  mob.update(self)
- self.shape = self:get_hitbox(self.pos)
+ self.hbox = self:get_hitbox()
 end
 
 function t_player:draw()
@@ -1259,8 +1270,8 @@ function room:draw()
  -- offset by camera focus
  camera(cam:unpack())
 
- dbg.watch(cam,"cam")
- 
+ -- dbg.watch(cam,"cam")
+
  if (self.paltab) pal(self.paltab)
  map(map_x, map_y, sx, sy, cell_w, cell_h)
  if (self.paltab) pal()
@@ -1279,18 +1290,18 @@ function room:draw()
  if debug and o_player then
   local ui_offset = cam - self.box_px.origin
   local mous = vec(stat(32), stat(33)) + ui_offset
-  local mbox = dbg:mbox()
-  if mbox and abs(mbox.size.x) + abs(mbox.size.y) > 0 then
-   mbox = mbox:shift(ui_offset)
-   fillp(0b0101101001011010)
-   palt()
-   color(0x48)
-   rect(mbox:unpack())
-   fillp()
-   prints(mbox.origin, mbox.origin:unpack())
-   prints(mbox.corner, mbox.corner:unpack())
-   prints(mbox.size, min(mbox.origin.x, mous.x), max(mbox.corner.y, mous.y)-6)
-  end
+  -- local mbox = dbg:mbox()
+  -- if mbox and abs(mbox.size.x) + abs(mbox.size.y) > 0 then
+  --  mbox = mbox:shift(ui_offset)
+  --  fillp(0b0101101001011010)
+  --  palt()
+  --  color(0x48)
+  --  rect(mbox:unpack())
+  --  fillp()
+  --  prints(mbox.origin, mbox.origin:unpack())
+  --  prints(mbox.corner, mbox.corner:unpack())
+  --  prints(mbox.size, min(mbox.origin.x, mous.x), max(mbox.corner.y, mous.y)-6)
+  -- end
   -- rect(mrconcat({self.box_px:unpack()}, 10))
   camera()  -- ui to raw screen coords
   prints('plr  ' .. tostr(o_player.pos), 0, 0)
@@ -1339,41 +1350,36 @@ function room_complab()
  cur_room:add(o_player)
 
  o_computer1 = t_sign(vec16(1.5, 0.5), 010, vec8(2, 2))
- o_computer1:addline(
-  "two white lines of text are blown up to fill the entire screen.")
- o_computer1:addline(
-  "it's so huge you can read it from across the room.")
- o_computer1:addline(
-  "i wonder what it says.")
+ o_computer1.lines = {
+  "two white lines of text are blown up to fill the entire screen.",
+  "it's so huge you can read it from across the room.",
+  "i wonder what it says."
+ }
  cur_room:add(o_computer1)
 
- o_computer2 = t_sign(vec16(5.5, 0.5), 112, vec8(2, 1))
- o_computer2:addline(
-  "looks like someone was planning a fundraising campaign for a video game.")
- o_computer2:addline("too bad they're just a troll.")
- o_computer2.bsize = vec(15,15)
+ o_computer2 = t_sign(vec16(5.5, 0.5), 112, vec8(2, 1), {bsize=vec16(1,1)})
+ o_computer2.lines = {
+  "looks like someone was planning a fundraising campaign for a video game.",
+  "too bad they're just a troll."
+ }
  cur_room:add(o_computer2)
 
  o_computer3 = t_sign(vec(156, 9), 116, vec_spritesize)
- o_computer3:addline("it's an off-ice computer.")
- o_computer3:addline("you can tell because someone is running troll powerpoint. it ticked past the last slide though.")
+ o_computer3.lines = {"it's an off-ice computer.", "you can tell because someone is running troll powerpoint. it ticked past the last slide though."}
  o_computer3.tcol = 15
  cur_room:add(o_computer3)
 
  o_computer4 = t_sign(vec(216, 8), 010, vec8(2, 1))
  o_computer4.paltab = {[6]=3}
- o_computer4:addline(
-  "wowie! looks like somebody's been flirting. in \f3green.")
+ o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green."}
  -- o_computer4:addline(
  --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
  cur_room:add(o_computer4)
 
  o_teapot = t_sign(vec16(15, 8), 050, vec8(2, 1))
  o_teapot.tcol = 012
- o_teapot:addline(
-  "it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.")
- o_teapot:addline(
-  "the sugar is arranged so as to be copyrightable intellectual property.")
+ o_teapot.lines = {"it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.",
+  "the sugar is arranged so as to be copyrightable intellectual property."}
  cur_room:add(o_teapot)
 
  o_karkat = t_npc(vec(64, 64), 070)
@@ -1382,8 +1388,7 @@ function room_complab()
   choicer:prompt({
     {"epilogues", function()
       self.lines = {
-       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised " ..
-       "movie sequels or whatever it is you're distracted with."
+       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
       }
       t_npc.interact(self, player) end},
     {"dave", function()
@@ -1398,23 +1403,21 @@ function room_complab()
  cur_room:add(o_karkat)
 
  o_cards = t_sign(vec(184, 194), 034, vec(16, 8))
- o_cards:addline("these cards really get lost in the floor. someone might slip and get hurt.")
- o_cards:addline("then again that's probably how the game would have ended anyway.")
- o_cards:addline("someone has tried to play solitaire with them. you feel sad.")
+ o_cards.lines = {"these cards really get lost in the floor. someone might slip and get hurt.",
+  "then again that's probably how the game would have ended anyway.",
+  "someone has tried to play solitaire with them. you feel sad."}
  cur_room:add(o_cards)
 
  o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
- o_plush:addline("todo gio pls add flavor text for plush in complab")
+ o_plush.lines = {"todo gio pls add flavor text for plush in complab"}
  cur_room:add(o_plush)
 
-
  o_scalemate = t_sign(vec(195, 70), 110, vec8(2,1))
- o_scalemate:addline("todo stray scalemate")
+ o_scalemate.lines = {"todo stray scalemate"}
  cur_room:add(o_scalemate)
 
-
  o_corner = t_sign(vec16(0,11), false, vec16(5,5))
- o_corner:addline("this corner of the room feels strangely empty and unoccupied.")
+ o_corner.lines = {"this corner of the room feels strangely empty and unoccupied."}
  cur_room:add(o_corner)
 
  cur_room:add(newportal(center, room_t))
@@ -1431,8 +1434,9 @@ function room_t(v)
  o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
  cur_room:add(o_chest)
 
- o_scalehang = mob(vec16(5, 3), 142, vec8(2,2))
- o_scalehang.anchor = vec8(0,-4)
+ o_scalehang = actor(vec16(5, 3), 142, vec8(2,2), {
+   anchor = vec8(0,-4)
+  })
  o_scalehang.tcol = 15
  o_scalehang.paltab = {[3]=2, [11]=8,[12]=11}
  function o_scalehang:draw()
@@ -1446,7 +1450,7 @@ function room_t(v)
 
  o_terezi = t_npc(vec8(8, 8), 128)
  o_terezi.prefix = "\f3"
- o_terezi:addline("todo terezi dialog")
+ o_terezi.lines = {"todo terezi dialog"}
  -- function o_terezi:interact(player)
  --  choicer:prompt({
  --    {"epilogues", function()
@@ -1481,7 +1485,7 @@ function room_lab(v)
  for y = 0, 3 do
   for x = 0, 1 do
    if (y == 2 and x == 0) goto continue
-   o_cap = mob(vec((x*3+2), (y*3+4))*16, 076, vec(16, 24))
+   o_cap = mob(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3))
    npcify(o_cap)
    o_cap.tcol = 10
    cur_room:add(o_cap)
@@ -1489,22 +1493,22 @@ function room_lab(v)
   end
  end
 
- o_switch_dial = t_sign(vec8(7.5, 2.5), 125, vec8(1,1))
+ o_switch_dial = t_sign(vec8(7.5, 2.5), 125, vec_spritesize)
  function o_switch_dial:interact()
   function promptswitch()
-    choicer:prompt({
-      {"flip it", function()
-        state_flags['frog_flipped'] = not state_flags['frog_flipped']
-        self.flipx = state_flags.frog_flipped
-        sfx(sfx_creak)
-       end},
-      {"do not", function()
-        dialoger:enqueue("it's set correctly, you think.")
-       end}
-     })
-   end
-   dialoger:enqueue("there is a switch here with a frog. flip it?", {callback=promptswitch}
-   )
+   choicer:prompt({
+     {"flip it", function()
+       state_flags['frog_flipped'] = not state_flags['frog_flipped']
+       self.flipx = state_flags.frog_flipped
+       sfx(sfx_creak)
+      end},
+     {"do not", function()
+       dialoger:enqueue("it's set correctly, you think.")
+      end}
+    })
+  end
+  dialoger:enqueue("there is a switch here with a frog. flip it?", {callback=promptswitch}
+  )
  end
  cur_room:add(o_switch_dial)
  o_switch_frog = mob(vec8(7, 1.5), 126, vec8(2,1))
@@ -1514,7 +1518,6 @@ function room_lab(v)
  o_chest.getlines = {
   "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.",
   "just about big enough to squeeze into, except there's no door hole."}
-
  o_chest.emptylines = {"someone has carved a hole into the floor to give this chest space for an extra-tall item."}
  cur_room:add(o_chest)
 
@@ -1567,8 +1570,8 @@ function room_stair(v)
    }))
 
  o_plush = t_sign(vec(80, 141), 032, vec_spritesize*2)
- o_plush:addline("he must be lost.")
- o_plush:addline("fortunately his owner can safely walk down here and retrieve him.")
+ o_plush.lines = {"he must be lost.",
+  "fortunately his owner can safely walk down here and retrieve him."}
  cur_room:add(o_plush)
 
  o_chest = t_chest('stair1',vec16(5, 2), 003, vec(2,2))
@@ -1596,26 +1599,29 @@ function room_stair(v)
  o_gio = t_npc(vec(33, 206), 064)
  o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
- o_gio:addline("oh. there is a man here.")
- o_gio:addline(function()
+ o_gio.lines = {
+  "oh. there is a man here.",
+  function()
    if speedshoes then
     dialoger:enqueue("you do not give him anything.")
    else
     dialoger:enqueue("he gave you an ❎ button. in addition to the rest.")
+    -- todo wink
     speedshoes = true
     sfx(000)
    end
-  end)
+  end
+ }
  function o_gio:update()
-  self.ismoving = (#dialoger.queue > 0)
+  self.ismoving = focus:is('dialog')
   t_npc.update(self)
  end
  cur_room:add(o_gio)
 
  o_vue = t_sign(vec(72, 184), 122, vec8(2,1))
  o_vue.tcol = 14
- o_vue:addline("it looks like he has been trying to copy media from the past into the present.")
- o_vue:addline("a fool's errand.")
+ o_vue.lines = {"it looks like he has been trying to copy media from the past into the present.",
+  "a fool's errand."}
  cur_room:add(o_vue)
 
  o_great = t_button(vec16(1, 6), false, vec_spritesize*2)
@@ -1625,9 +1631,8 @@ function room_stair(v)
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
- o_horsehole = t_sign(vec16(6, 7), false, vec_spritesize:dotp(1, 2))
- o_horsehole:addline("through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.")
- o_horsehole:addline("you hear a distant winney.")
+ o_horsehole = t_sign(vec16(6, 7), false, vec8(1, 2))
+ o_horsehole.lines = {"through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.", "you hear a distant winney."}
  cur_room:add(o_horsehole)
 
 end
@@ -1638,14 +1643,13 @@ function room_turbine(v)
  cur_room:add(o_player)
 
  o_player.bsize = vec(14, 14)  -- feel cramped
- o_player.shape_offset = vec(-7, -14)
+ o_player.hbox_offset = vec(-7, -14)
 
  o_great = t_button(vec16(12, 1), false, vec_spritesize*2)
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
-
- o_hole = mob(vec16(9, 3), 008, vec16(3,1))
+ o_hole = mob(vec16(9, 3), 008, vec16(3,1), {anchor=vec16(1,0)})
  function o_hole:update()
   self.deobstructs = (state_flags['holefilled'])
   mob.update(self)
@@ -1670,16 +1674,14 @@ function room_turbine(v)
    if state_flags['holefilled'] then
     dialoger:enqueue("there was a hole here. it's gone now.")
    else
-    dialoger:enqueue("there is a hole here.")
+    dialoger:enqueue("there is a hole here. it's here now.")
    end
   end
  end
  o_hole.size = vec16(1)
- o_hole.anchor = vec16(1,0)
  function o_hole:draw()
   if state_flags['holefilled'] then mob.draw(self)
   else mob.drawdebug(self) end
-
  end
  cur_room:add(o_hole)
 
@@ -1689,10 +1691,9 @@ function room_turbine(v)
    {26, 6, 6},
    {26, 12, 4}
   }) do
-  o_fg_rail = mob(vec8(fg[1], fg[2]), 117, vec8(fg[3], 1))
-  o_fg_rail.anchor = vec8(0,-1)
+  o_fg_rail = mob(vec8(fg[1], fg[2]), 117, vec8(fg[3], 1), {anchor=vec8(0,-1)})
   function o_fg_rail:draw()
-   local width = self.shape.w
+   local width = self.hbox.w
    for x = 1, width/8 do
     paltt(0)
     spr(self.spr, self.pos:__add(self.anchor):__add(vec8(x-1,0)):unpack())
@@ -1725,16 +1726,16 @@ function room_roof(v)
  o_stair_rail.obstructs = true
  cur_room:add(o_stair_rail)
 
- o_pogo = t_sign(vec8(11, 9), 078, vec_spritesize*2)
- o_pogo.bsize = vec_spritesize
+ o_pogo = t_sign(vec8(11, 9), 078, vec_spritesize*2, {bsize=vec_spritesize})
  o_pogo.obstructs = true
  o_pogo.tcol = 3
- o_pogo:addline("thanks to the miracle of digital technology, the pogo ride has been effortlessly preserved to the exact specifications of the designer, a feat unheard of in any previous era.")
- o_pogo:addline("but it doesn't work anymore.")
- o_pogo:addline(function()
+ o_pogo.lines = {
+  "thanks to the miracle of digital technology, the pogo ride has been effortlessly preserved to the exact specifications of the designer, a feat unheard of in any previous era.", "but it doesn't work anymore.",
+  function()
    o_pogo.draw = mob.draw
    o_pogo.lines = {"it seems someone has replaced the ride with a still photo."}
-  end)
+  end
+ }
 
  function o_pogo:draw()
   if self.stage.mclock % 32 < 16 then
@@ -1749,18 +1750,20 @@ function room_roof(v)
  o_lamppost = t_sign(vec8(14,6), 078, vec_spritesize)
  o_lamppost.obstructs = true
  o_lamppost.tcol = 14
- o_lamppost:addline(function() sfx(sfx_itemget) end)
- o_lamppost:addline("it's the \falamppost\f7.")
- o_lamppost:addline("quit the game?")
- o_lamppost:addline(function()
-  choicer:prompt({
-    {"yes", function()
-      dialoger:enqueue("i mean, nobody's stopping you.") end},
-    {"no", function()
-      dialoger:enqueue("ok cool") end},
-   })
-  end)
- o_lamppost:addline(function() poke(0x5f80, true) end)
+ o_lamppost.lines = {
+  function() sfx(sfx_itemget) end,
+  "it's the \falamppost\f7.",
+  "quit the game?",
+  function()
+   choicer:prompt({
+     {"yes", function()
+       dialoger:enqueue("i mean, nobody's stopping you.") end},
+     {"no", function()
+       dialoger:enqueue("ok cool") end},
+    })
+  end,
+  closure(poke, 0x5f80, true)
+ }
 
  function o_lamppost:draw()
   paltt(self.tcol)
@@ -1789,11 +1792,10 @@ end
 function room_ocean(v)
  cur_room = room(5, 1, 1, 1)
  o_player = t_player(v or vec8(13, 7))
- -- cur_room.paltab = {[5]=1}
  cur_room:add(o_player)
 
  o_great = t_button(vec16(6, 1), false, vec_spritesize*2)
- 
+
  o_great.interact = function()
   room_turbine(vec(119, 26))
  end
@@ -1807,7 +1809,7 @@ function room_ocean(v)
  o_stair.obstructs = true
  cur_room:add(o_stair)
 
- o_decorator = actor(vec())
+ o_decorator = entity(vec())
  function o_decorator:draw()
   rect(8, 24, 119, 87,4)
  end
@@ -1845,14 +1847,14 @@ function room_chess(v)
   paltt(0)
   spr(self.spr, spx, spy)
   for oy = -4,-1 do
-  spr(self.spr-1, spx, spy+(8*oy))
+   spr(self.spr-1, spx, spy+(8*oy))
   end
   spr(self.spr-2, spx, spy+(8*-5))
   mob.drawdebug(self)
 
  end
 
- for x in all({3, 11, 20, 28}) do 
+ for x in all({3, 11, 20, 28}) do
   o_pillar = mob(vec8(x,14), 120, vec_spritesize)
   o_pillar.draw = drawpillar
   o_pillar.obstructs = true
@@ -1861,15 +1863,13 @@ function room_chess(v)
 
  o_stalemate_w = t_sign(vec8(7, 12), 066, vec8(2,3))
  npcify(o_stalemate_w)
- o_stalemate_w:addline("it's a north-going prospitian.")
- o_stalemate_w:addline("it looks like they're stuck.")
+ o_stalemate_w.lines = {"it's a north-going prospitian.", "it looks like they're stuck."}
  cur_room:add(o_stalemate_w)
 
  o_stalemate_b = t_sign(vec8(7, 11), 064, vec8(2,3))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab={[14]=0, [7]=0, [0]=7}
- o_stalemate_b:addline("it's a south-going dersite.")
- o_stalemate_b:addline("it looks like they're stuck.")
+ o_stalemate_b.lines = {"it's a south-going dersite.", "it looks like they're stuck."}
  function o_stalemate_b:interact(p)
   if (p.pos.y > 96) return false
   t_sign.interact(self)
@@ -1878,6 +1878,7 @@ function room_chess(v)
 
  o_promoguy = t_npc(vec8(12.5, 7), 064)
  o_promoguy.step = vec(1, 0)
+ o_promoguy.dynamic = true
  o_promoguy.facing = 'r'
  o_promoguy.paltab={[14]=0, [7]=0, [0]=7}
  function o_promoguy:update()
@@ -1894,8 +1895,7 @@ function room_chess(v)
   t_npc.interact(self, p)
   dialoger:enqueue('',{callback=function() self.facing = wasfacing end})
  end
- o_promoguy:addline("i have to keep at it if i want to get that promotion.")
- o_promoguy:addline("...what do you mean i'm going the wrong way?")
+ o_promoguy.lines = {"i have to keep at it if i want to get that promotion.", "...what do you mean i'm going the wrong way?"}
  cur_room:add(o_promoguy)
 
  o_palt_portal = newportal(vec8(2, 9), room_complab)
@@ -1923,7 +1923,7 @@ function room_chess(v)
 
  o_jade = t_npc(vec8(23, 6), 192)
  o_jade.prefix = "\#d\fb"
- o_jade:addline("todo jade dialog")
+ o_jade.lines = {"todo jade dialog"}
  -- function o_jade:interact(player)
  --  choicer:prompt({
  --    {"epilogues", function()
@@ -1969,7 +1969,7 @@ function _init()
   menuitem(5,'toggle debug',function() debug = not debug end)
 
   menuitem(1,'progress',function()
-     state_flags['holefilled'] = true
+    state_flags['holefilled'] = true
    end)
  end
 
@@ -1983,11 +1983,11 @@ function _update()
  dialoger:update()
  choicer:update()
 
- dbg.watch(dialoger,"dialoger")
- dbg.watch(cur_room,"cur_room")
- dbg.watch(o_player,"player")
- dbg.watch(focus,"focus")
- dbg.watch(cur_room.objects,"objects")
+-- dbg.watch(dialoger,"dialoger")
+-- dbg.watch(cur_room,"cur_room")
+-- dbg.watch(o_player,"player")
+-- dbg.watch(focus,"focus")
+-- dbg.watch(cur_room.objects,"objects")
 end
 
 function _draw()
@@ -1996,7 +1996,7 @@ function _draw()
  cur_room:draw()
  dialoger:draw()
  choicer:draw()
- if (debug) dbg.draw()
+-- if (debug) dbg.draw()
 end
 __gfx__
 0011223300000000eeeeeeee009a555555519a00fffffff1111111111fffffff5000000000000005000000000000000000000000000000050000000000000000
@@ -2119,6 +2119,7 @@ fff001111001fffffff1000000001fffffff1000c1ffffffffffffffffffffffeeeeeeeeeeeeeeee
 fff011111100fffffff0011111100ffffffff11100ffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
 ff04890148880ffffff4441111448ffffffff044880fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
 ff00000f00000ffffff0000000000ffffffff000000fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff00000000000000000000000000000000
+
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -2161,3 +2162,128 @@ __sfx__
 000900000363000650006000160000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600
 000a00001b050180501b0502005020050000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00020000137500d750007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__music__
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+
