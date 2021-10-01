@@ -5,16 +5,19 @@ __lua__
 -- walkabout
 -- giovan_h
 
+-- jade sprite
+-- jade dialog
+-- stray scalemate
+-- complab fiduspawn plush
+-- terezi dialog tree
+-- kanaya placement
+-- kanaya dialog
+
 -- music item with disc/mp3 icon
--- use wtk for textbox style improvement
--- gio wink animation
 -- pico-8 coroutines, seriously
 -- fun values
 --  hallway randomizer
---  chaos emerald chest can you find them all? (you have already found them all)
 --  lamp hint
--- frog switch
--- faygo vodka item
 -- fake juju (it's just a lolilpop)
 -- a modern computer, but it doesn't have magic time powers
 -- depending on where you flip the switch there is a frog in a different place
@@ -42,8 +45,8 @@ local sfx_creak = 002
 local sfx_itemget = 003
 local sfx_curmove = 004
 local sfx_wink = 005
--- local sfx_blip2 = 006
--- local sfx_fishcatch = 007
+local sfx_blip2 = 006
+local sfx_fishcatch = 007
 
 -->8
 -- utility
@@ -108,6 +111,7 @@ function paltt(t)
  palt()
  palt(0, false)
  palt(t, true)
+
 end
 
 -- random in range [a, b]
@@ -207,9 +211,7 @@ function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
 function vec:unpack() return self.x, self.y end
 function vec:dotp(v, y)
  if (y) v = vec(v, y)
- -- temporarily de-zero-index
- local plusone = self+vec_oneone
- return vec((plusone.x * v.x), (plusone.y * v.y))-vec_oneone
+ return vec(self.x * v.x, self.y * v.y)
 end
 
 -- 2d bounding box
@@ -468,7 +470,6 @@ function stage:update()
  -- update clock
  self.mclock = (self.mclock + 1) % 27720
  -- update tasks
- dbg.watch(self._tasks, "tasks")
  for handle, task in pairs(self._tasks) do
   task.ttl -= 1
   if task.ttl <= 0 then
@@ -513,145 +514,145 @@ function vec16(x, y) return vec(x, y)*16 end
 
 -- interactive debugger
 -- based on work by mot ?tid=37822
-dbg=function()
- poke(0x5f2d, 1)
- local vars,sy={},0
- local mx,my,mb,pb,click,mw,exp,x,y,dragx0, dragy0,mbox
- function butn(exp,x,y)
-  local hover=mx>=x and mx<x+4 and my>=y and my<y+6
-  print(exp and "-" or "+",x,y,hover and 7 or 5)
-  return hover and click
- end
- function inspect(v,d)
-  d=d or 0
-  local t=type(v)
-  if t=="table" then
-   if(d>5)return "[table]"
-   local props={}
-   for key,val in pairs(v) do
-    props[key]=inspect(val,d+1)
-   end
-   return {
-    expand=false,
-    props=props
-   }
-  elseif t=="string" then
-   return chr(34)..v..chr(34)
-  elseif t=="boolean" then
-   return v and "true" or "false"
-  elseif t=="nil" or t=="function" or t=="thread" then
-   return "["..t.."]"
-  else
-   return ""..v
-  end
- end
- function drawvar(var,name)
-  if type(var)=="string" then
-   print(name..":",x+4,y,6)
-   print(var,x+#(""..name)*4+8,y,7)
-   y+=6
-  else
-   -- expand button
-   if(butn(var.expand,x,y))var.expand=not var.expand
-   print(name,x+4,y,12) y+=6
-   if var.expand then  -- content
-    x+=2
-    for key,val in pairs(var.props) do
-     drawvar(val,key)
-    end
-    x-=2
-   end
-  end
- end
- function copyuistate(src,dst)
-  if type(src)=="table" and type(dst)=="table" then
-   dst.expand=src.expand
-   for key,val in pairs(src.props) do
-    copyuistate(val,dst.props[key])
-   end
-  end
- end
- function watch(var,name)
-  name=name or "[var]"
-  local p,i=vars[name],inspect(var)
-  if(p)copyuistate(p,i)
-  vars[name]=i
- end
- function clear()
-  vars={}
- end
- function draw(dx,dy,w,h)
-  dx=dx or 0
-  dy=dy or 48
-  w=w or 128-dx
-  h=h or 128-dy
-  -- collapsed mode
-  if not exp then
-   dx+=w-10
-   w,h=10,5
-  end
-  -- window
-  clip(dx,dy,w,h)
-  color(1)
-  rectfill(box_screen:unpack())
-  x=dx+2 y=dy+2-sy
+-- dbg=function()
+--  poke(0x5f2d, 1)
+--  local vars,sy={},0
+--  local mx,my,mb,pb,click,mw,exp,x,y,dragx0, dragy0,mbox
+--  function butn(exp,x,y)
+--   local hover=mx>=x and mx<x+4 and my>=y and my<y+6
+--   print(exp and "-" or "+",x,y,hover and 7 or 5)
+--   return hover and click
+--  end
+--  function inspect(v,d)
+--   d=d or 0
+--   local t=type(v)
+--   if t=="table" then
+--    if(d>5)return "[table]"
+--    local props={}
+--    for key,val in pairs(v) do
+--     props[key]=inspect(val,d+1)
+--    end
+--    return {
+--     expand=false,
+--     props=props
+--    }
+--   elseif t=="string" then
+--    return chr(34)..v..chr(34)
+--   elseif t=="boolean" then
+--    return v and "true" or "false"
+--   elseif t=="nil" or t=="function" or t=="thread" then
+--    return "["..t.."]"
+--   else
+--    return ""..v
+--   end
+--  end
+--  function drawvar(var,name)
+--   if type(var)=="string" then
+--    print(name..":",x+4,y,6)
+--    print(var,x+#(""..name)*4+8,y,7)
+--    y+=6
+--   else
+--    -- expand button
+--    if(butn(var.expand,x,y))var.expand=not var.expand
+--    print(name,x+4,y,12) y+=6
+--    if var.expand then  -- content
+--     x+=2
+--     for key,val in pairs(var.props) do
+--      drawvar(val,key)
+--     end
+--     x-=2
+--    end
+--   end
+--  end
+--  function copyuistate(src,dst)
+--   if type(src)=="table" and type(dst)=="table" then
+--    dst.expand=src.expand
+--    for key,val in pairs(src.props) do
+--     copyuistate(val,dst.props[key])
+--    end
+--   end
+--  end
+--  function watch(var,name)
+--   name=name or "[var]"
+--   local p,i=vars[name],inspect(var)
+--   if(p)copyuistate(p,i)
+--   vars[name]=i
+--  end
+--  function clear()
+--   vars={}
+--  end
+--  function draw(dx,dy,w,h)
+--   dx=dx or 0
+--   dy=dy or 48
+--   w=w or 128-dx
+--   h=h or 128-dy
+--   -- collapsed mode
+--   if not exp then
+--    dx+=w-10
+--    w,h=10,5
+--   end
+--   -- window
+--   clip(dx,dy,w,h)
+--   color(1)
+--   rectfill(box_screen:unpack())
+--   x=dx+2 y=dy+2-sy
 
-  -- read mouse
-  mx,my,mw=stat(32),stat(33),stat(36)
-  mb=band(stat(34),1)~=0
-  click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
-  pb=mb
+--   -- read mouse
+--   mx,my,mw=stat(32),stat(33),stat(36)
+--   mb=band(stat(34),1)~=0
+--   click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
+--   pb=mb
 
-  if mb then
-   mbox = bbox.pack(dragx0, dragy0, mx, my)
-  else
-   dragx0, dragy0 = mx, my
-   mbox = nil
-  end
+--   if mb then
+--    mbox = bbox.pack(dragx0, dragy0, mx, my)
+--   else
+--    dragx0, dragy0 = mx, my
+--    mbox = nil
+--   end
 
-  if exp then
-   -- variables
-   for k,v in pairs(vars) do
-    drawvar(v,k)
-   end
-   -- scrolling
-   local sh=y+sy-dy
-   sy=max(min(sy-mw*8,sh-h),0)
-  end
-  -- expand/collapse btn
-  if(butn(exp,dx+w-10,dy))exp=not exp
-  -- draw mouse ptr
-  clip()
+--   if exp then
+--    -- variables
+--    for k,v in pairs(vars) do
+--     drawvar(v,k)
+--    end
+--    -- scrolling
+--    local sh=y+sy-dy
+--    sy=max(min(sy-mw*8,sh-h),0)
+--   end
+--   -- expand/collapse btn
+--   if(butn(exp,dx+w-10,dy))exp=not exp
+--   -- draw mouse ptr
+--   clip()
 
-  line(mx,my,mx,my+2,8)
-  color(7)
- end
- function show()
-  exp=true
-  while exp do
-   draw()
-   flip()
-  end
- end
- function prnt(v,name)
-  watch(v,name)
-  show()
- end
+--   line(mx,my,mx,my+2,8)
+--   color(7)
+--  end
+--  function show()
+--   exp=true
+--   while exp do
+--    draw()
+--    flip()
+--   end
+--  end
+--  function prnt(v,name)
+--   watch(v,name)
+--   show()
+--  end
 
- return{
-  watch=watch,
-  clear=clear,
-  expand=function(val)
-   if(val~=nil)exp=val
-   return exp
-  end,
-  draw=draw,
-  mbox=function() return mbox end,
-  show=show,
-  print=prnt
- }
-end
-dbg = dbg()
+--  return{
+--   watch=watch,
+--   clear=clear,
+--   expand=function(val)
+--    if(val~=nil)exp=val
+--    return exp
+--   end,
+--   draw=draw,
+--   mbox=function() return mbox end,
+--   show=show,
+--   print=prnt
+--  }
+-- end
+-- dbg = dbg()
 
 -- dialog box
 -- based on work by rustybailey
@@ -683,6 +684,8 @@ local dialoger = entity:extend{
  end,
  trigger = function(self, message, opts)
   self.opts = opts
+  self.color = opts.color or 0
+  self.bgcolor = opts.bgcolor or 6
   self.current_message = opts.prefix or ''
   self.messages_by_line = nil
   self.current_line_in_table = 1
@@ -740,8 +743,8 @@ local dialoger = entity:extend{
     -- press btn 5 to skip to the end of the current passage
     -- otherwise, print 1 character per frame
     -- with sfx about every 5 frames
+     if (i % 5 == 0) sfx(self.opts.blip or sfx_blip)
     if not btnp(5) then
-     if (i % 5 == 0) sfx(sfx_blip)
      yield()
     end
    end
@@ -749,7 +752,6 @@ local dialoger = entity:extend{
    self.current_line_count += 1
    if ((self.current_line_count > self.max_lines) or (self.current_line_in_table == #self.messages_by_line and not self.opts.autoplay)) then
     self.pause_dialog = true
-    printa(stat(1), "animate_text pause")
     yield()
    end
   end
@@ -772,13 +774,12 @@ local dialoger = entity:extend{
   if (self.animation_loop and costatus(self.animation_loop) != 'dead') then
    if (not self.pause_dialog) then
     --> resume animation if not paused
-    printa(stat(1), "coresume animate_text")
     coresume(self.animation_loop, self)
    else
     if btnp(4) then
      self.pause_dialog = false
      self.current_line_count = 1
-     self.current_message = self.opts.prefix
+     self.current_message = self.opts.prefix or ''
     end
    end
   elseif (self.animation_loop and self.current_message) then
@@ -796,7 +797,6 @@ local dialoger = entity:extend{
    if (#self.queue > 0) then
     focus:push'dialog'
     self:trigger(self.queue[1].message, self.queue[1].opts)
-    printa(stat(1), "coresume animate_text (new message)")
     coresume(self.animation_loop, self)
    end
   end
@@ -812,7 +812,7 @@ local dialoger = entity:extend{
 
   -- display message
   if (self.current_message) then
-   rectfill(1,90,126,126,6)
+   rectfill(1,90,126,126,self.bgcolor)
    rect(1,90,126,126,5)
    print(self.current_message, self.x, self.y, self.color)
   end
@@ -841,10 +841,9 @@ local dialoger = entity:extend{
 local choicer = entity:extend{
  z=4,
  upos=vec(64),
- padding=vec(3, 4),
- char_size=vec(4, 5),
+ padding=vec(4, 4),
+ char_size=vec(4, 6),
  size=nil,
- mclock = 0,
  selected = 1,
  buttoncool = 0,
  prompt = function(self, choices, exopts)
@@ -858,30 +857,34 @@ local choicer = entity:extend{
   for v in all(self.choices) do
    width = max(width, #v[1])
   end
-  self.size = self.char_size:dotp(width, #self.choices) + (self.padding*2)
-  self.size += vec(4, 0)  -- cursor
+  width += 2
+  self.size = self.char_size:dotp(width, #self.choices) - vec_oneone*2
+  self.size += self.padding*2
   focus:push'choice'
   self.buttoncool = 4
  end,
  drawui = function(self)
   if (self.choices == nil) return
   local rbox = bbox(self.upos, self.size)
-  color(0)
-  rectfill(rbox:unpack())
-  color(9)
-  rect(rbox:unpack())
+  rectfill(mrconcatu(rbox, 0))
+  rect(mrconcatu(rbox, 9))
   local ppos = self.upos + self.padding
   color(7)
+  local char_size_spaced = self.char_size + vec(0, 1)
   for i,v in ipairs(self.choices) do
-   -- local print_ = i == self.selected and prints or print
-   print(v[1], ppos:__add(vec8(1,i-1)):unpack())
+   print(v[1], 
+    mrconcatu(ppos:__add(
+     vec(2, i-1):dotp(char_size_spaced)
+    ), v[3] or 7))
   end
-  if (self.mclock % 16 < 8) color(5)
-  print(">", ppos:__add(vec8(0,self.selected-1)):unpack())
+  color(7)
+  if (self.stage.mclock % 16 < 8) color(5)
+  print("> ", 
+   ppos:__add(
+     vec(0, self.selected-1):dotp(char_size_spaced)
+   ):unpack())
  end,
  update = function(self)
-  self.mclock += 1
-  self.mclock %= 27720
   if (focus:isnt'choice') return
   if (self.buttoncool > 0) self.buttoncool -= 1;    return
 
@@ -927,15 +930,16 @@ end
 
 local t_sign = mob:extend{
  lines = nil,
- prefix = '',
+ blip = sfx_blip,
  talkedto = 0
 }
 function t_sign:interact(player)
+ if (player.cooldown > 0) return false
  for _, v in ipairs(self.lines or {'no problem here.'}) do
   if type(v) == 'function' then
-   dialoger:enqueue('', {autoplay=true,callback=v})
+   dialoger:enqueue(nil, {autoplay=true,callback=v})
   else
-   dialoger:enqueue(v, {prefix=self.prefix})
+   dialoger:enqueue(v, self)
   end
  end
  self.talkedto += 1
@@ -953,17 +957,14 @@ local t_chest = t_sign:extend{
 function t_chest:init(id, pos, ispr, isize, itcol)
  t_sign.init(self, pos, 003, vec8(2, 2))
  self.id = id
- self.data = chest_data[id] or {
-  open=false
- }
- chest_data[id] = self.data
+ chest_data[self.id] = chest_data[id] or false
  self.ispr = ispr
  self.isize = isize
  self.itcol = itcol
 end
 function t_chest:interact(player)
- if not self.data.open then
-  self.data['open'] = true
+ if not chest_data[self.id] then
+  chest_data[self.id] = true
   sfx(sfx_itemget)
   self.ihold = 0xff
   self.ttl = 0x0f + self.ihold
@@ -984,9 +985,9 @@ function t_chest:draw()
  local apos = self._apos
  local spx, spy = apos:unpack()
  if (self.ttl and self.ttl < 0x0f) self.ttl = nil
- paltt(0)
+ paltt(self.palt)
  pal(self.paltab)
- if self.data.open then
+ if chest_data[self.id] then
   spr(014, spx, spy, 2,1)
   if (self.ttl) then
    local self_isize = self.isize
@@ -994,9 +995,12 @@ function t_chest:draw()
    -- local offset = vec(4*(2-self_isize.x),-min(12, age)-8*self_isize.y+8)
    local offset = vec(4*(2-self_isize.x),max(-16, -age)-self_isize.y)
    local sx, sy = apos:__add(offset):unpack()
+   pal()
+   pal(self.ipaltab)
    paltt(self.itcol)
    spr(self.ispr, sx, sy, self_isize:unpack())
-   paltt(0)
+   pal(self.paltab)
+   paltt(self.palt)
   end
   spr(019, spx, spy+8, 2,1)
  else
@@ -1091,10 +1095,10 @@ function newportal(pos, dest, deststate)
   end
  end
  function o_portal:interact(p)
-  if p.cooldown > 0 then
-   p.cooldown += 1
-   return
-  end
+  -- if p.cooldown > 0 then
+  --  p.cooldown += 1
+  --  return
+  -- end
   if p.hbox:overlaps(self.hbox) then
    self:spark()
    p:destroy()
@@ -1221,7 +1225,10 @@ function t_player:tryinteract()
   self.ibox = bbox(self.hbox.origin, vec(12, 12)):shift(facemap[self.facing])
   for _,obj in pairs(self.stage.objects) do
    if (self.ibox:overlaps(obj.hbox) and obj.interact) then
-    if (obj:interact(self) != false) break
+    if (obj:interact(self) != false) then
+     self.cooldown += 2
+     break
+    end
    end
   end
  else
@@ -1402,10 +1409,23 @@ function room_complab()
   "the sugar is arranged so as to be copyrightable intellectual property."}
  cur_room:add(o_teapot)
 
+ o_chest = t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone)
+ o_chest.getlines = {
+  "you got a fistfull of boondollars!",
+  "these presumably connotate some sort of value"}
+ cur_room:add(o_chest)
+
+ o_chest = t_chest('clabfaygo',vec8(25, 20), 043, vec(1,2))
+ o_chest.getlines = {
+  "you got a faygo! a fun drink for fun people.",
+  "it tastes like red pop."
+ }
+ cur_room:add(o_chest)
+
  o_karkat = t_npc(vec(64, 64), 070)
- o_karkat.prefix = "\f5"
+ o_karkat.color = 5
  function o_karkat:interact(player)
-  choicer:prompt{
+ local choices = {
    {"epilogues", function()
      self.lines = {
       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
@@ -1418,7 +1438,16 @@ function room_complab()
       "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
      }
      t_npc.interact(self, player) end}
-  }
+    }
+  if chest_data['clabdollar'] then
+   add(choices, {"boondollars", function()
+   self.lines = {"oh fuck no. get those out of my face",
+   "terezi's been filling the place with those. they're a worthless eyesore.",
+   "why do you think i put them in all the chests?"}
+   t_npc.interact(self, player)
+   end, 10})
+  end
+  choicer:prompt(choices)
  end
  cur_room:add(o_karkat)
 
@@ -1449,8 +1478,9 @@ function room_t(v)
  o_player = t_player(v or vec8(3, 12))
  cur_room:add(o_player)
 
- o_chest = t_chest('t1',vec8(5, 5), 142, vec(2, 2), 15)
- o_chest.getlines = {"you got another scalemate!" }
+ o_chest = t_chest('scalemate',vec8(5, 5), 142, vec(2, 2), 15)
+ o_chest.getlines = {"you got another scalemate!",
+ "there was also a rope in the chest. you decide to leave it and take the scalemate far away." }
  o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
  cur_room:add(o_chest)
 
@@ -1460,7 +1490,7 @@ function room_t(v)
  o_scalehang.tcol = 15
  o_scalehang.paltab = {[3]=2, [11]=8,[12]=11}
  function o_scalehang:draw()
-  local spx, spy = self.pos:__add(9,-16):unpack()
+  local spx, spy = self.pos:__add(9,-24):unpack()
   line(spx, spy, spx, spy-32, 7)
   mob.draw(self)
  end
@@ -1469,25 +1499,24 @@ function room_t(v)
  -- hanging around
 
  o_terezi = t_npc(vec8(8, 7), 128)
- o_terezi.prefix = "\f3"
- o_terezi.lines = {"todo terezi dialog"}
- -- function o_terezi:interact(player)
- --  choicer:prompt{
- --    {"epilogues", function()
- --      self.lines = {
- --       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised " ..
- --       "movie sequels or whatever it is you're distracted with."
- --      }
- --      t_npc.interact(self, player) end},
- --    {"dave", function()
- --      self.lines = {
- --       "i have had literally one interaction with the guy and it ended up being all about vriska.",
- --       "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
- --       "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
- --      }
- --      t_npc.interact(self, player) end}
- --   }
- -- end
+ o_terezi.color = 3
+ function o_terezi:interact(player)
+  local choices = {
+    {"up to", function()
+      self.lines = {
+       "oh, 1'm not up to 4nyth1ng",
+       "just h4ng1ng 4round >:]"
+      }
+      t_npc.interact(self, player) end},
+   }
+  if chest_data['scalemate'] then
+   add(choices, {"scalemate", function()
+   self.lines = {"you c4n h4ng on3 1f you w4nt 1 dont m1nd"}
+   t_npc.interact(self, player)
+   end, 10})
+  end
+   choicer:prompt(choices)
+ end
  cur_room:add(o_terezi)
 
  cur_room:add(newportal(vec(24, 90), room_complab))
@@ -1515,13 +1544,17 @@ function room_lab(v)
  end
 
  o_switch_dial = t_sign(vec8(7.5, 2.5), 125, vec_spritesize)
- function o_switch_dial:interact()
+ o_switch_dial.flipx = state_flags['frog_flipped']
+ function o_switch_dial:interact(player)
+  if (player.cooldown > 0) return false
   function promptswitch()
    choicer:prompt{
     {"flip it", function()
       state_flags['frog_flipped'] = not state_flags['frog_flipped']
+      printh(state_flags['frog_flipped'])
       self.flipx = state_flags.frog_flipped
       sfx(sfx_creak)
+      player.cooldown += 2
      end},
     {"do not", function()
       dialoger:enqueue("it's set correctly, you think.")
@@ -1535,12 +1568,40 @@ function room_lab(v)
  o_switch_frog = mob(vec8(7, 1.5), 126, vec8(2, 1))
  cur_room:add(o_switch_frog)
 
- o_chest = t_chest('science1',vec16(2, 10), 076, vec(2, 3), 10)
+ o_chest = t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10)
  o_chest.getlines = {
   "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.",
   "just about big enough to squeeze into, except there's no door hole."}
  o_chest.emptylines = {"someone has carved a hole into the floor to give this chest space for an extra-tall item."}
  cur_room:add(o_chest)
+
+ o_frog = t_sign(vec8(12, 4), 174, vec8(2, 2), {
+   bsize=vec8(2,1),
+   anchor=vec8(0,-1)
+  })
+ o_frog.flipx = true
+ o_frog.obstructs = true
+ function o_frog:interact(player)
+  o_frog.lines = {
+   "hi. i'm the right frog.",
+   "i'm more secret than the other frog.",
+  }
+  if chest_data['sciencetank'] then
+  local choices = {
+    {"frog", closure(t_npc.interact, self, player)},
+    {"science tank", function()
+      self.lines = {
+       "this? this is where we make the frogs."
+      }
+      t_npc.interact(self, player) end, 10}
+   }
+   choicer:prompt(choices)
+  else
+   t_sign.interact(self, player)
+  end
+   
+ end
+ if (state_flags['frog_flipped']) cur_room:add(o_frog)
 
  cur_room:add(newportal(vec(64, 84), room_t, {
     facing='d',
@@ -1600,6 +1661,14 @@ function room_stair(v)
  o_chest.emptylines = {"it was only big enough to hold one chest."}
  cur_room:add(o_chest)
 
+ o_chest2 = t_chest('stair2',vec16(2, 2), 206, vec(2, 2), 12)
+ o_chest2.getlines = {
+  "you got minihoof!", 
+  "small enough to sit on your desk, horse enough to be entirely inconvenient to care for.",
+  "totally worth it though."
+ }
+ cur_room:add(o_chest2)
+
  o_stair_rail = mob(vec(65, 80), nil, vec(15, 1))
  o_stair_rail.obstructs = true
  cur_room:add(o_stair_rail)
@@ -1620,37 +1689,54 @@ function room_stair(v)
  o_gio = t_npc(vec(33, 206), 064)
  o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
- o_gio.lines = {
+ function o_gio:interact(player)
+  self.lines = {
+   "oh. there is a man here.",
+   function()
+    if speedshoes then
+     dialoger:enqueue("you do not give him anything.")
+    else
+     dialoger:enqueue("he gave you an ❎ button. in addition to the rest.", {callback=function()
 
-  "oh. there is a man here.",
-  function()
-   if false and speedshoes then
-    dialoger:enqueue("you do not give him anything.")
-   else
-    dialoger:enqueue("he gave you an ❎ button. in addition to the rest.", {callback=function()
+        focus:push'anim'
+        self.facing = 'd'
+        cur_room:schedule(10, function()
+          sfx(sfx_wink)
+          local face = sprparticle(
+           179, vec_oneone,
+           self._apos:__add(4, 7),  -- get this while standing still
+           vec(0.03, 0), vec_zero, 50, nil, self.z+1
+          )
+          face.tcol = 14
+          cur_room:add(face)
+         end)
+        cur_room:schedule(60, function()
+          focus:pop'anim'
+         end)
 
-       focus:push'anim'
-       o_gio.facing = 'd'
-       cur_room:schedule(10, function()
-         sfx(sfx_wink)
-         local face = sprparticle(
-          179, vec_oneone,
-          o_gio._apos:__add(4, 7),  -- get this while standing still
-          vec(0.03, 0), vec_zero, 50, nil, o_gio.z+1
-         )
-         face.tcol = 14
-         cur_room:add(face)
-        end)
-       cur_room:schedule(60, function()
-         focus:pop'anim'
-        end)
-
-      end})
-    speedshoes = true
-    sfx(000)
+       end})
+     speedshoes = true
+     sfx(000)
+    end
    end
+  }
+  if chest_data['limoncello'] then
+  local choices = {
+    {"man", closure(t_npc.interact, self, player)},
+    {"faygocello", function()
+      self.lines = {
+       "...",
+       "you are right to hold me accountable for my sins."
+      }
+      t_npc.interact(self, player) end, 10}
+   }
+   choicer:prompt(choices)
+  else
+   t_npc.interact(self, player)
+   
   end
- }
+ end
+
  function o_gio:update()
   self.ismoving = focus:is'dialog'
   t_npc.update(self)
@@ -1691,10 +1777,13 @@ function room_turbine(v)
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
- o_chest = t_chest('frog',vec16(10, 1.5), 174, vec(2, 2))
- o_chest.getlines = {"todo frog"}
- o_chest.emptylines = {"todo frog"}
- cur_room:add(o_chest)
+ o_chest = t_chest('frog',vec8(22, 11), 174, vec(2, 2))
+ o_chest.getlines = {"you found a contraband amphibian!",
+  "he says something about being hidden better than the other frog.",
+  "you pet the frog."
+ }
+ o_chest.emptylines = {"you have left this chest so much the poorer."}
+ if (not state_flags['frog_flipped']) cur_room:add(o_chest)
 
  o_hole = mob(vec16(9, 3), 008, vec16(3, 1), {anchor=vec16(1, 0)})
  function o_hole:update()
@@ -1702,7 +1791,7 @@ function room_turbine(v)
   mob.update(self)
  end
  function o_hole:interact(player)
-  local hastileitem = chest_data['tilechest'] and chest_data['tilechest'].open
+  local hastileitem = chest_data['tilechest']
   if hastileitem and not state_flags['holefilled'] then
    function promptbridge()
     choicer:prompt{
@@ -1734,10 +1823,11 @@ function room_turbine(v)
 
  for fg in all{
   {4, 6, 10},
-  {14, 8, 12},
+  {14, 8, 8},
+  {24, 8, 2},
   {26, 6, 6},
   {26, 12, 4},
-  {20, 4, 2}
+  {22, 12, 2}
  } do
   o_fg_rail = mob(vec8(fg[1], fg[2]), 117, vec8(fg[3], 1), {anchor=vec8(0,-1)})
   function o_fg_rail:draw()
@@ -1756,6 +1846,13 @@ function room_turbine(v)
  o_andrew.tcol = 14
  cur_room:add(o_andrew)
 
+ o_cantreach = t_sign(vec8(24,11), false, vec8(1, 3))
+ o_cantreach.lines = {
+  "try as you might, you can't cross the gap.",
+  "probably would have been a disappointment, honestly."
+ }
+ cur_room:add(o_cantreach)
+
  cur_room:add(newtrig(vec8(2, 15.5), vec8(2, .5), room_stair, {
     facing='d',
     pos=vec(24, 121)
@@ -1770,11 +1867,28 @@ function room_roof(v)
  o_player = t_player(v or vec(16, 98))
  cur_room:add(o_player)
 
- o_stair_rail = mob(vec(77, 48), nil, vec(2, 64))
+ o_stair_rail = mob(vec(77, 48), nil, vec(3, 64))
  o_stair_rail.obstructs = true
  cur_room:add(o_stair_rail)
 
- o_pogo = t_sign(vec8(11, 9), 078, vec_spritesize*2, {bsize=vec_spritesize})
+ o_chest = t_chest('pogo',vec8(7, 6), 078, vec(2, 2))
+ o_chest.paltab = {[5]=7,[1]=6}
+ o_chest.ipaltab = {[11]=12, [0]=6}
+ o_chest.itcol = 3
+ o_chest.getlines = {
+  "you got a rare off-color slimer!",
+  "man, they don't make 'em like this anymore."
+ }
+ cur_room:add(o_chest)
+
+ o_chest = t_chest('limoncello',vec8(13, 4), 176, vec_oneone)
+ o_chest.getlines = {
+  "it's a glass of... what is that, faygo cut with limoncello?",
+  "a drink for the direst of circumstances."
+ }
+ cur_room:add(o_chest)
+
+ o_pogo = t_sign(vec8(12, 9), 078, vec_spritesize*2, {bsize=vec_spritesize})
  o_pogo.obstructs = true
  o_pogo.tcol = 3
  o_pogo.lines = {
@@ -1796,11 +1910,11 @@ function room_roof(v)
  cur_room:add(o_pogo)
  o_pogo:update()
 
- o_lamppost = t_sign(vec8(14, 6), 078, vec_spritesize)
+ o_lamppost = t_sign(vec8(6, 9), 078, vec_spritesize)
  o_lamppost.obstructs = true
  o_lamppost.tcol = 14
  o_lamppost.lines = {
-  function() sfx(sfx_itemget) end,
+  function() sfx(sfx_fishcatch) end,
   "it's the \falamppost\f7.",
   "quit the game?",
   function()
@@ -1832,7 +1946,7 @@ function room_roof(v)
  end
  cur_room:add(o_lamppost)
 
- cur_room:add(newtrig(vec8(1, 11), vec8(.5, 2), room_turbine, {
+ cur_room:add(newtrig(vec8(1, 11), vec8(.8, 2), room_turbine, {
     facing='l',
     pos=vec8(30, 6)
    }))
@@ -1852,6 +1966,40 @@ function room_ocean(v)
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
+ o_chest = t_chest('oceanr',vec8(11, 9), 181, vec(2,1))
+ o_chest.getlines = {"you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.",
+  "given that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.",
+  "some enterprising sburb players have even weaponized this mechanic."}
+ cur_room:add(o_chest)
+
+
+ o_kanaya = t_npc(vec8(8, 9), 134)
+ o_kanaya.color = 3
+ o_kanaya.blip = sfx_blip2
+ function o_kanaya:interact(player)
+  local choices = {
+    {"up to", function()
+      self.lines = {
+       "oH i'M jUST eNJOYING tHE vIEW",
+       "tHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT",
+       "i kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT",
+       "hABIT cAN bE a pOWERFUL tHING i sUPPOSE"
+      }
+      t_npc.interact(self, player) end},
+   }
+  if chest_data['clabfaygo'] then
+   add(choices, {"redpop", function()
+   self.lines = {
+    "i", "eR", "uH", "wELL",
+    "i tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU"
+   }
+   t_npc.interact(self, player)
+   end, 10})
+  end
+   choicer:prompt(choices)
+ end
+ cur_room:add(o_kanaya)
+
  o_stair = t_button(vec16(1, 4), false, vec_spritesize*2)
  o_stair.interact = function()
   room_chess()
@@ -1869,7 +2017,7 @@ function room_ocean(v)
     particle.update(self)
    end
    function fish:interact()
-    sfx(007)
+    sfx(sfx_fishcatch)
     dialoger:enqueue("you caught a fish!")
     dialoger:enqueue("but nothing happened.")
    end
@@ -1939,7 +2087,7 @@ function room_chess(v)
   "it looks like they're stuck."}
  function o_stalemate_b:interact(p)
   if (p.pos.y > 96) return false
-  t_sign.interact(self)
+  t_sign.interact(self, p)
  end
  cur_room:add(o_stalemate_b)
 
@@ -1977,10 +2125,10 @@ function room_chess(v)
   "you found a floor tile!",
   "you are filled with the relieving fealing of linear progression."
  }
- o_chest_tile.emptylines = {}
  cur_room:add(o_chest_tile)
 
  o_chest_chaos = t_chest('chaose',vec8(24, 13), 124, vec_oneone)
+ o_chest_chaos.paltab = {[5]=7,[1]=6}
  o_chest_chaos.getlines = {
   "you found a chaos emerald! can you find them all?",
   "(you have already found them all)"
@@ -1991,8 +2139,28 @@ function room_chess(v)
  cur_room:add(o_chest_chaos)
 
  o_jade = t_npc(vec8(23, 6), 192)
- o_jade.prefix = "\#d\fb"
- o_jade.lines = {"todo jade dialog"}
+ o_jade.color = 11
+ o_jade.bgcolor = 5
+
+ function o_jade:interact(player)
+  local choices = {
+    {"walkaround", function()
+      self.lines = {
+       "yeah, it feels good to wake up and stretch my legs!",
+       "sometimes it feels like i'm gonna spend my whole life asleep. or awake, but... oh, you know!",
+       "but that's all going to change soon! i think..."
+      }
+      t_npc.interact(self, player) end},
+    {"dogs", function()
+      self.lines = {
+       "ok yes that's one thing about prospit that suuucks :(",
+       "the people here are all very nice but there's no dogs or animals anywhere",
+       "sure bec can be a bossypants sometimes but i still think these guys are missing out"
+      }
+      t_npc.interact(self, player) end},
+   }
+   choicer:prompt(choices)
+   end
  -- function o_jade:interact(player)
  --  choicer:prompt({
  --    {"epilogues", function()
@@ -2005,7 +2173,7 @@ function room_chess(v)
  --      self.lines = {
  --       "i have had literally one interaction with the guy and it ended up being all about vriska.",
  --       "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
- --       "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
+ --       "i'd joke about offing yourself being the only way to escape her absurd machivellian hoofbeastshit but at this point she's probably fucked up death too. also, people are fucking dead and i'm not going to chose this particular moment to start listing off all the cool perks of getting murdered."
  --      }
  --      t_npc.interact(self, player) end}
  --   })
@@ -2039,18 +2207,23 @@ function _init()
 
   menuitem(1,'progress',function()
     state_flags['holefilled'] = true
+    chest_data['limoncello'] = true
+    chest_data['clabdollar'] = true
+    chest_data['clabfaygo'] = true
+    chest_data['sciencetank'] = true
    end)
  end
 
  prettify_map()
  -- starting room
- room_turbine()
+ room_ocean()
  focus:push'player'
 end
 
 function _update()
  cur_room:update()
 -- dbg.watch(cur_room.objects, "objects")
+-- dbg.watch(cur_room._tasks, "tasks")
 -- dialoger:update()
 -- choicer:update()
 
@@ -2058,9 +2231,9 @@ end
 
 function _draw()
  cur_room:draw()
- -- dialoger:draw()
- -- choicer:draw()
- if (debug) dbg.draw()
+-- dialoger:draw()
+-- choicer:draw()
+-- if (debug) dbg.draw()
 end
 __gfx__
 0011223300000000eeeeeeee009a555555519a00fffffff1111111111fffffff5000000000000005000000000000000000000000000000050000000000000000
@@ -2158,47 +2331,47 @@ fff2222222222ffffff2222112222fffffffff22222ffffffff1111111111ffffff1111111111fff
 5cccccc651111111111111158808880ef333332200ddd8f887aa9a80000000000000000000000000000000000000000000000000000000001111000000011110
 5cccccc651111111111111158880008e2f3333ff002dd8ef77aa9980000000000000000000000000000000000000000000000000000000000000000000000000
 dd1111d651111111111111158888888eff7733f2002dc8eee9998000000000000000000000000000000000000000000000000000000000000000000000000000
-0dddddd00555111111115550eeeeeeee227722f20022222200000000000000000000000000000000000000000000000000000000000000000000000000000000
-fffff11111111ffffff1111111ffffffffffff1111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffffcccccccccccccce1
-fff111111111fffffff111111111ffffffff11111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fcccccc1eccce0e1e
-fff111111111fffffff1111111111ffffff111111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fcccccce1ee0070ee
-1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccee107070ec
+0dddddd11555111111115551eeeeeeee227722f20022222200000000000000000000000000000000000000000000000000000000000000000000000000000000
+fffffff111111fffff111111fffffffff11ffff111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffffcccccccccccccce1
+fffff1111111fffffff1111111fffffff11111111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fcccccc1eccce0e1e
+fff11111111fffffffff11111111ffffff1111111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fcccccce1ee0070ee
+1111111111111fffff1111111111111fff11111111111fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccee107070ec
 1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fccccccc1e077770c
-111111111111111f111111111111111ff11111111111111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccce0777770c
-111177711771111f111111111111111ff11111117771111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccc007077770
-11ddddd1ddddd11f111111111111111ff111111ddddd111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fccc0000e07077770
+f11111111111111f111111111111111ff11111111111111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccce0777770c
+111177111177111f111111111111111ff11111117771111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccc007077770
+111ddd771ddd711f111111111111111ff1111117ddd7111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fccc0000e07077770
 11d777d7d777d1fff11111111111111ff111171d777d11ffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fc00770ee07700770
-f1d711d7d117dfffff111111111111fff111177d711d1fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f077770ee0777700c
-ffddddd7dddddffffff1111111111fffff11177ddddd1fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0707770077770ccc
-ff1777777771fffffff1111111111ffffff1777777771fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f0700777777070ccc
-fff177d6771fffffffff11111111fffffff117777d71ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f00c0707007070ccc
-ffff177771fffffffffff111111ffffffffff177771fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0c07707007070ccc
-fff10111101fffffffff10111101fffffffff11111ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc07070c07700ccc
-fff100dd001fffffffff10000001ffffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc00c00cc00ccccc
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fff000000001fffffff1000000001fffffff1000001fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fff001111001fffffff1000000001fffffff1000c1ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fff011111100fffffff0011111100ffffffff11100ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-ff04890148880ffffff4441111448ffffffff044880fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0000000000000000
-ff00000f00000ffffff0000000000ffffffff000000fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffff0000000000000000
+11d711d7d117d1ffff111111111111fff111177d711d1fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f077770ee0777700c
+117ddd777ddd71ffff111111111111fff1111777ddd71fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f070e770077770ccc
+f117777777711fffff111111111111fff111777777771fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f0700777777070ccc
+f11177dd77111ffffff1111111111fffff1117777d71ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f00c0707007070ccc
+ff1117767111fffffff1111111111fffff111177771fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0c07707007070ccc
+ff1a911119a1ffffffff11111111fffffff1111111ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc07070c07700ccc
+fffa9aaaa9afffffffffa111111affffffff1a9aa9ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc00c00cc00ccccc
+fff9aaaaaa9fffffffff9aaaaaa9fffffffffaa99affffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fffa9aaaa9afffffffffa9aaaa9afffffffffaaaa9ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fff9a9aa9a9fffffffff9a9aa9a9fffffffff9999affffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fffaaa99aaafffffffffaaa99aaafffffffffaaaaaffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fffaaaaaaaafffffffffaaaaaaaafffffffffa9aaaffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fff99ffff99fffffffff99ffff99ffffffffff99ffffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
+fffeed22deefffffffffeed22deefffffffff2deeeffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0000000000000000
+ff2222222222fffffff2222222222ffffffff222222fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffff0000000000000000
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 0000000101010101010101010001010100000000000000000000000000000000000000007575757575757575000000000000000000000000000000000000080900000000000000000000000000000000000035353535353535351111111111110000000000000000000000000000000000000000000000000000000000000000
-0000000a0b0000000000000a0b0000000000000a0b0000000000000a0b0000000000000035353535353535350000000000000000000000000000000000001819000000007575000000000000000000000000353535353535353511111111111100003d3d3d3d3d3d3d3d3d3d3d3d000000000000000000000000000000000000
-0928291a1b2929292929291a1b2929292929291a1b2929292929291a1b292a080000000072733535353572730000000000000000000000000000000001010809242424240809000001010000000000000000262626262626262611111111111100003d3d3d3d3d3d3d3d3d3d3d3d000000000809080908090809080908090000
-1938393939393939393939393939393939393939393939393939393939393a180000000008090809080908090000000000007575757575757575757575751819242424241819000075757575757575750000262525262626262611111111111100003d3d3d3d3d3d3d3d3d3d3d3d000000001819181918191819181918190000
+0000000a0b0000000000000a0b0000000000000a0b0000000000000a0b0000000000000035353535353535350000000000000000000000000000000000001819000000000000000000000000000000000000353535353535353511111111111100003d3d3d3d3d3d3d3d3d3d3d3d000000000000000000000000000000000000
+0928291a1b2929292929291a1b2929292929291a1b2929292929291a1b292a080000000072733535353572730000000000000000000000000000000001010809000000000000000001010000000000000000262626262626262611111111111100003d3d3d3d3d3d3d3d3d3d3d3d000000000809080908090809080908090000
+1938393939393939393939393939393939393939393939393939393939393a180000000008090809080908090000000000007575757575757575757575751819000000000000000075757575757575750000262525262626262611111111111100003d3d3d3d3d3d3d3d3d3d3d3d000000001819181918191819181918190000
 0c0c090809080908090809080908090809080908090809080908090809080c0c000000001819181918191819000000000000080908090809080908090809080900000000000000000809080908090809000026252526262626261111111111110101080908090809080908090809000008090809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c000000000809080908090809000000000000181918191819181918191819181975757575757575751819181918191819000026262626262626261111111111110101181918191819181918191819000018191819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c757575751819181918191819757575750000080900000000000000000000080908090809000008090809000000000000000027272727272727371111111111110101080908090809080908090809000008090809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c353535350809080908090809353535350000181900000000000000000000181918191819000018191819000000000000000027272727272727371111111111110101181918191819181918191819000018191819181918191819181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c72733535181918191819181935357273000008090000000000000000000000000000000000000000000000000000000000002727272727272737111111111111000008093d3d080908093d3d0809000000000809080908090809080908090000
-1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000000000000000000000000000027272727272727371111111111110000181918191819181918191819000000001819181918191819181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000000000008090809000000002727272727272737111111111111000008090809080908090809080900000000010101010101240d080908090000
-1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000000000000181918190000242727272727272727371111111111110000181918191819181918191819000000000101010101240d1d181918190000
+1c1c090809080908090809080908090809080908090809080908090809081c1c72733535181918191819181935357273000008090000000000000000000000000000000000002424000000000000000000002727272727272737111111111111000008093d3d080908093d3d0809000000000809080908090809080908090000
+1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000024240000757575750000000027272727272727371111111111110000181918191819181918191819000000001819181918191819181918190000
+1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000809000008090809000000002727272727272737111111111111000008090809080908090809080900000000010101010101240d080908090000
+1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000018190000181918190000242727272727272727371111111111110000181918191819181918191819000000000101010101240d1d181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c1819181918191819181918191819181900000809000000000000000000000000000000000000000000000000000000002427272727272727273711111111111100000809080908090809080908090100000001010101240d1d2d3d3d3d3d0100
 1c1c191819181918191819181918191819181918191819181918191819181c1c08090809080908090809080908090809000018190000000000000000000000000000000000000000000000000000000024243636363636363636111111111111000018191819181918191819181900000000010101240d1d2d3d3d3d3d3d0000
 1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000000000000000000000024242626262626262626111111111111000008093d3d080908093d3d080900000000080908091d2d3d3d3d3d013d0000
