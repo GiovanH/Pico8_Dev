@@ -448,6 +448,7 @@ function stage:add(object)
  add(self.objects, object)
  -- if (object.stage) del(object.stage.objects, object)
  object.stage = self
+ return object
 end
 function stage:_zsort()
  sort(self.objects, function(a) return a.z end)
@@ -1152,9 +1153,11 @@ local t_player = mob:extend{
  obstructs = true,
  dynamic=true
 }
-function t_player:init(pos)
+function t_player:init(pos, kwargs)
+ kwargs = kwargs or {}
  mob.init(self, pos, 64, vec(16, 24),
   {bsize=vec(13, 7)})  -- a little smaller
+ self.facing = kwargs.facing or self.facing
 end
 function t_player:_moveif(step, facing)
  local npos = self.pos + step
@@ -1266,7 +1269,6 @@ function t_player:draw()
  end
  mob.draw(self)
  if (debug and self.ibox) rect(mrconcatu(self.ibox, 10))
- if (debug and self.nhbox) rect(mrconcatu(self.nhbox, 10))
 end
 
 local room = stage:extend{
@@ -1327,19 +1329,6 @@ function room:draw()
   local mous = vec(stat(32), stat(33))
   pset(mrconcatu(mous, 10))
   mous += ui_offset
-  -- local mbox = dbg:mbox()
-  -- if mbox and abs(mbox.size.x) + abs(mbox.size.y) > 0 then
-  --  mbox = mbox:shift(ui_offset)
-  --  fillp(0b0101101001011010)
-  --  palt()
-  --  color(0x48)
-  --  rect(mbox:unpack())
-  --  fillp()
-  --  prints(mbox.origin, mbox.origin:unpack())
-  --  prints(mbox.corner, mbox.corner:unpack())
-  --  prints(mbox.size, min(mbox.origin.x, mous.x), max(mbox.corner.y, mous.y)-6)
-  -- end
-  -- rect(mrconcatu(self.box_px, 10))
 
   prints('plr  ' .. tostr(o_player.pos), 0, 0)
   prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
@@ -1352,10 +1341,6 @@ function room:draw()
   line(67, 18, 67, 26)
  end
 end
--- function room:add(object)
---  object.pos += self.box_px.origin
---  stage.add(self, object)
--- end
 
 function drawgreat(self)
  local box = bbox((self.pos + vec(0, 2)), vec(15, 12))
@@ -1379,8 +1364,7 @@ cur_room = nil
 function room_complab()
  local center = vec16(8, 8.25)
  cur_room = room("complab", 0, 0, 2, 2)
- o_player = t_player(center)
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(center))
 
  o_computer1 = t_sign(vec16(1.5, 0.5), 010, vec8(2, 2))
  o_computer1.lines = {
@@ -1432,6 +1416,29 @@ function room_complab()
  }
  cur_room:add(o_chest)
 
+ o_cards = t_sign(vec(184, 194), 034, vec(16, 8))
+ o_cards.lines = {"these cards really get lost in the floor. someone might slip and get hurt.",
+  "then again that's probably how the game would have ended anyway.",
+  "someone has tried to play solitaire with them. you feel sad."}
+ cur_room:add(o_cards)
+
+ o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
+ o_plush.lines = {
+  "it's a stray fiduspawn host plush.",
+  "once hatched, fidusuckers \fawill\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."}
+ cur_room:add(o_plush)
+
+ -- todo write dialogue
+ o_scalemate = t_sign(vec(195, 70), 110, vec8(2, 1))
+ o_scalemate.lines = {"todo stray scalemate"}
+ cur_room:add(o_scalemate)
+
+ o_corner = t_sign(vec16(0, 11), false, vec16(5, 5))
+ o_corner.lines = {"this corner of the room feels strangely empty and unoccupied."}
+ cur_room:add(o_corner)
+
+
+
  o_karkat = t_npc(vec(64, 64), 070)
  o_karkat.color = 5
  function o_karkat:interact(player)
@@ -1461,41 +1468,20 @@ function room_complab()
  end
  cur_room:add(o_karkat)
 
- o_cards = t_sign(vec(184, 194), 034, vec(16, 8))
- o_cards.lines = {"these cards really get lost in the floor. someone might slip and get hurt.",
-  "then again that's probably how the game would have ended anyway.",
-  "someone has tried to play solitaire with them. you feel sad."}
- cur_room:add(o_cards)
-
- o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
- o_plush.lines = {
-  "it's a stray fiduspawn host plush.",
-  "once hatched, fidusuckers \fawill\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."}
- cur_room:add(o_plush)
-
- -- todo write dialogue
- o_scalemate = t_sign(vec(195, 70), 110, vec8(2, 1))
- o_scalemate.lines = {"todo stray scalemate"}
- cur_room:add(o_scalemate)
-
- o_corner = t_sign(vec16(0, 11), false, vec16(5, 5))
- o_corner.lines = {"this corner of the room feels strangely empty and unoccupied."}
- cur_room:add(o_corner)
-
  cur_room:add(newportal(center, room_t))
 
 end
 
 function room_t(v)
  cur_room = room("teerezi", 2, 0, 1, 1)
- o_player = t_player(v or vec8(3, 12))
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(v or vec8(3, 12)))
 
- o_chest = t_chest('scalemate',vec8(5, 5), 142, vec(2, 2), 15)
+ o_chest = cur_room:add(
+  t_chest('scalemate',vec8(5, 5), 142, vec(2, 2), 15)
+ )
  o_chest.getlines = {"you got another scalemate!",
  "there was also a rope in the chest. you decide to leave it and take the scalemate far away." }
  o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
- cur_room:add(o_chest)
 
  o_scalehang = actor(vec16(5, 3), 142, vec8(2, 2), {
    anchor = vec8(0,-4)
@@ -1532,16 +1518,13 @@ function room_t(v)
  cur_room:add(o_terezi)
 
  cur_room:add(newportal(vec(24, 90), room_complab))
-
  cur_room:add(newportal(vec(104, 90), room_lab))
 
 end
 
 function room_lab(v)
  cur_room = room("scilab", 6, 0, 1, 2)
- o_player = t_player(v or vec(64, 90))
- o_player.facing = 'r'
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(v or vec(64, 90), {facing='r'}))
 
  for y = 0, 3 do
   for x = 0, 1 do
@@ -1580,13 +1563,6 @@ function room_lab(v)
  o_switch_frog = mob(vec8(7, 1.5), 126, vec8(2, 1))
  cur_room:add(o_switch_frog)
 
- o_chest = t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10)
- o_chest.getlines = {
-  "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.",
-  "just about big enough to squeeze into, except there's no door hole."}
- o_chest.emptylines = {"someone has carved a hole into the floor to give this chest space for an extra-tall item."}
- cur_room:add(o_chest)
-
  o_frog = t_sign(vec8(12, 4), 174, vec8(2, 2), {
    bsize=vec8(2,1),
    anchor=vec8(0,-1)
@@ -1614,6 +1590,13 @@ function room_lab(v)
    
  end
  if (state_flags['frog_flipped']) cur_room:add(o_frog)
+
+ o_chest = t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10)
+ o_chest.getlines = {
+  "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.",
+  "just about big enough to squeeze into, except there's no door hole."}
+ o_chest.emptylines = {"someone has carved a hole into the floor to give this chest space for an extra-tall item."}
+ cur_room:add(o_chest)
 
  cur_room:add(newportal(vec(64, 84), room_t, {
     facing='d',
