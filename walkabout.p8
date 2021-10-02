@@ -47,25 +47,10 @@ local sfx_curmove = 004
 local sfx_wink = 005
 local sfx_blip2 = 006
 local sfx_fishcatch = 007
+local sfx_footstep = 008
 
 -->8
 -- utility
-
--- focus stack
--- use this to keep track of what
--- player input should be influencing.
--- global because dialog/others are global.
--- get(), push(v), pop(expected)
-local focus = {}
-function focus:get() return self[#self] end
-function focus:is(q) return self:get() == q end
-function focus:isnt(q) return self:get() != q end
-function focus:push(s) add(self, s) end
-function focus:pop(expected)
- local r = deli(self)
- if (expected) assert(expected == r, "popped '" .. r .. "', not " .. expected)
- return r
-end
 
 -- any to string (dumptable)
 function tostring(any, depth)
@@ -96,6 +81,8 @@ function mrconcat(t, ...)
  end
  return unpack(t)
 end
+
+-- auto unpack first element
 function mrconcatu(o, ...)
  return mrconcat({o:unpack()}, ...)
 end
@@ -163,7 +150,6 @@ function obj:__call(...)
 end
 function obj:extend(proto)
  proto = proto or {}
- -- copy meta values, since lua doesn't walk the prototype chain to find them
  for k, v in pairs(self) do
   if sub(k, 1, 2) == "__" then
    proto[k] = v
@@ -405,10 +391,10 @@ function mob:update()
 end
 function mob:drawdebug()
  if debug then
-  actor.drawdebug(self)
   -- print bbox and anchor/origin WITHIN box
   local drawbox = self.hbox:grow(vec_noneone)
   rect(mrconcatu(drawbox, 2))
+  actor.drawdebug(self)
  end
 end
 
@@ -511,6 +497,23 @@ end
 -- game utility
 
 function vec16(x, y) return vec(x, y)*16 end
+
+
+-- focus stack
+-- use this to keep track of what
+-- player input should be influencing.
+-- global because dialog/others are global.
+-- get(), push(v), pop(expected)
+local focus = {}
+function focus:get() return self[#self] end
+function focus:is(q) return self:get() == q end
+function focus:isnt(q) return self:get() != q end
+function focus:push(s) add(self, s) end
+function focus:pop(expected)
+ local r = deli(self)
+ if (expected) assert(expected == r, "popped '" .. r .. "', not " .. expected)
+ return r
+end
 
 -- interactive debugger
 -- based on work by mot ?tid=37822
@@ -691,7 +694,7 @@ local dialoger = entity:extend{
   self.current_line_in_table = 1
   self.current_line_count = 1
   self.pause_dialog = false
-  self:format_message(message)
+  if (message) self:format_message(message)
   self.animation_loop = nil
   self.animation_loop = cocreate(self.animate_text)
  end,
@@ -937,7 +940,7 @@ function t_sign:interact(player)
  if (player.cooldown > 0) return false
  for _, v in ipairs(self.lines or {'no problem here.'}) do
   if type(v) == 'function' then
-   dialoger:enqueue(nil, {autoplay=true,callback=v})
+   dialoger:enqueue(nil, {callback=v})
   else
    dialoger:enqueue(v, self)
   end
@@ -1013,6 +1016,7 @@ end
 function npcify(amob)
  amob.bsize = vec8(2, 1)
  amob.anchor = vec8(0,-2)
+ amob.hbox_offset = vec8(0, 0)
  amob.hbox = amob:get_hitbox()
  amob.tcol = 15
  amob.obstructs = true
@@ -1063,7 +1067,7 @@ function newportal(pos, dest, deststate)
  -- o_portal.anchor = vec(-12, 0)
  -- o_portal.hbox_offset = vec(-12, 0)
  o_portal.tcol = 15
- o_portal.bsize += vec(0, 3)
+ o_portal.bsize += vec(0, 6)
  o_portal.hbox = o_portal:get_hitbox()
  function o_portal:draw()
   local apos = self._apos
@@ -1157,7 +1161,7 @@ function t_player:_moveif(step, facing)
  local nhbox = self:get_hitbox(npos)
  local unobstructed = nhbox:within(self.stage.box_px)
  local tiles = nhbox:maptiles(self.stage.map_origin)
- for i,tile in pairs(tiles) do
+ for tile in all(tiles) do
   if band(tile.flags, flag_walkable) == 0 then
    unobstructed = false
    break
@@ -1166,7 +1170,6 @@ function t_player:_moveif(step, facing)
  for _,obj in pairs(self.stage.objects) do
   if (obj == self) goto continue
   if (nhbox:overlaps(obj.hbox) and obj.obstructs) unobstructed = false; break
-  if (nhbox:within(obj.hbox) and obj.deobstructs) unobstructed = true; break
   ::continue::
  end
  if (facing) self.facing = facing
@@ -1245,6 +1248,8 @@ function t_player:update()
   self:tryinteract()
  end
 
+ if (self.ismoving and (self.stage.mclock % 10 == 0)) sfx(sfx_footstep)
+
  self.stage.camfocus = self.pos
  mob.update(self)
  self.hbox = self:get_hitbox()
@@ -1318,7 +1323,10 @@ function room:draw()
  if debug and o_player then
 
   local ui_offset = cam - self.box_px.origin
-  local mous = vec(stat(32), stat(33)) + ui_offset
+  poke(0x5f2d, 1)
+  local mous = vec(stat(32), stat(33))
+  pset(mrconcatu(mous, 10))
+  mous += ui_offset
   -- local mbox = dbg:mbox()
   -- if mbox and abs(mbox.size.x) + abs(mbox.size.y) > 0 then
   --  mbox = mbox:shift(ui_offset)
@@ -1395,6 +1403,7 @@ function room_complab()
  o_computer3.tcol = 15
  cur_room:add(o_computer3)
 
+ -- todo polish dialogue
  o_computer4 = t_sign(vec8(27, 1), 010, vec8(2, 1), {
    bsize=vec_16_16})
  o_computer4.paltab = {[6]=3}
@@ -1409,6 +1418,7 @@ function room_complab()
   "the sugar is arranged so as to be copyrightable intellectual property."}
  cur_room:add(o_teapot)
 
+ -- todo polish dialogue
  o_chest = t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone)
  o_chest.getlines = {
   "you got a fistfull of boondollars!",
@@ -1458,9 +1468,12 @@ function room_complab()
  cur_room:add(o_cards)
 
  o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
- o_plush.lines = {"todo gio pls add flavor text for plush in complab"}
+ o_plush.lines = {
+  "it's a stray fiduspawn host plush.",
+  "once hatched, fidusuckers \fawill\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."}
  cur_room:add(o_plush)
 
+ -- todo write dialogue
  o_scalemate = t_sign(vec(195, 70), 110, vec8(2, 1))
  o_scalemate.lines = {"todo stray scalemate"}
  cur_room:add(o_scalemate)
@@ -1496,8 +1509,7 @@ function room_t(v)
  end
  cur_room:add(o_scalehang)
 
- -- hanging around
-
+ -- todo write dialogue
  o_terezi = t_npc(vec8(8, 7), 128)
  o_terezi.color = 3
  function o_terezi:interact(player)
@@ -1591,7 +1603,7 @@ function room_lab(v)
     {"frog", closure(t_npc.interact, self, player)},
     {"science tank", function()
       self.lines = {
-       "this? this is where we make the frogs."
+       "we use those to make the frogs."
       }
       t_npc.interact(self, player) end, 10}
    }
@@ -1777,7 +1789,7 @@ function room_turbine(v)
  o_great.draw = drawgreat
  cur_room:add(o_great)
 
- o_chest = t_chest('frog',vec8(22, 11), 174, vec(2, 2))
+ o_chest = t_chest('frog',vec8(20, 11), 174, vec(2, 2))
  o_chest.getlines = {"you found a contraband amphibian!",
   "he says something about being hidden better than the other frog.",
   "you pet the frog."
@@ -1785,9 +1797,15 @@ function room_turbine(v)
  o_chest.emptylines = {"you have left this chest so much the poorer."}
  if (not state_flags['frog_flipped']) cur_room:add(o_chest)
 
- o_hole = mob(vec16(9, 3), 008, vec16(3, 1), {anchor=vec16(1, 0)})
+ o_hole = mob(vec16(10, 3), 008, vec16(1, 1))
  function o_hole:update()
-  self.deobstructs = (state_flags['holefilled'])
+  if state_flags['holefilled'] then
+
+   local tiles = self.hbox:maptiles(self.stage.map_origin)
+   for tile in all(tiles) do
+    mset(mrconcatu(tile.pos, 002))
+   end
+  end
   mob.update(self)
  end
  function o_hole:interact(player)
@@ -1823,11 +1841,11 @@ function room_turbine(v)
 
  for fg in all{
   {4, 6, 10},
-  {14, 8, 8},
-  {24, 8, 2},
+  {14, 8, 6},
+  {22, 8, 4},
   {26, 6, 6},
   {26, 12, 4},
-  {22, 12, 2}
+  {20, 12, 2}
  } do
   o_fg_rail = mob(vec8(fg[1], fg[2]), 117, vec8(fg[3], 1), {anchor=vec8(0,-1)})
   function o_fg_rail:draw()
@@ -1846,7 +1864,7 @@ function room_turbine(v)
  o_andrew.tcol = 14
  cur_room:add(o_andrew)
 
- o_cantreach = t_sign(vec8(24,11), false, vec8(1, 3))
+ o_cantreach = t_sign(vec8(22,11), false, vec_spritesize)
  o_cantreach.lines = {
   "try as you might, you can't cross the gap.",
   "probably would have been a disappointment, honestly."
@@ -1978,7 +1996,7 @@ function room_ocean(v)
  o_kanaya.blip = sfx_blip2
  function o_kanaya:interact(player)
   local choices = {
-    {"up to", function()
+    {"roof", function()
       self.lines = {
        "oH i'M jUST eNJOYING tHE vIEW",
        "tHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT",
@@ -2072,6 +2090,7 @@ function room_chess(v)
   cur_room:add(o_pillar)
  end
 
+ -- Todo polish dialog
  o_stalemate_w = t_sign(vec8(7, 12), 066, vec8(2, 3))
  npcify(o_stalemate_w)
  o_stalemate_w.lines = {
@@ -2123,7 +2142,7 @@ function room_chess(v)
  o_chest_tile.paltab = {[5]=7,[1]=6}
  o_chest_tile.getlines = {
   "you found a floor tile!",
-  "you are filled with the relieving fealing of linear progression."
+  "you are filled with relief at some semblance of linear progression."
  }
  cur_room:add(o_chest_tile)
 
@@ -2142,6 +2161,7 @@ function room_chess(v)
  o_jade.color = 11
  o_jade.bgcolor = 5
 
+ -- todo more dialogue
  function o_jade:interact(player)
   local choices = {
     {"walkaround", function()
@@ -2161,23 +2181,6 @@ function room_chess(v)
    }
    choicer:prompt(choices)
    end
- -- function o_jade:interact(player)
- --  choicer:prompt({
- --    {"epilogues", function()
- --      self.lines = {
- --       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised " ..
- --       "movie sequels or whatever it is you're distracted with."
- --      }
- --      t_npc.interact(self, player) end},
- --    {"dave", function()
- --      self.lines = {
- --       "i have had literally one interaction with the guy and it ended up being all about vriska.",
- --       "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
- --       "i'd joke about offing yourself being the only way to escape her absurd machivellian hoofbeastshit but at this point she's probably fucked up death too. also, people are fucking dead and i'm not going to chose this particular moment to start listing off all the cool perks of getting murdered."
- --      }
- --      t_npc.interact(self, player) end}
- --   })
- -- end
  cur_room:add(o_jade)
 
  cur_room:add(newtrig(vec8(31.5, 8), vec8(.5, 3), room_ocean, {
@@ -2368,10 +2371,10 @@ __map__
 1c1c191819181918191819181918191819181918191819181918191819181c1c000000000809080908090809000000000000181918191819181918191819181975757575757575751819181918191819000026262626262626261111111111110101181918191819181918191819000018191819181918191819181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c757575751819181918191819757575750000080900000000000000000000080908090809000008090809000000000000000027272727272727371111111111110101080908090809080908090809000008090809080908090809080908090000
 1c1c191819181918191819181918191819181918191819181918191819181c1c353535350809080908090809353535350000181900000000000000000000181918191819000018191819000000000000000027272727272727371111111111110101181918191819181918191819000018191819181918191819181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c72733535181918191819181935357273000008090000000000000000000000000000000000002424000000000000000000002727272727272737111111111111000008093d3d080908093d3d0809000000000809080908090809080908090000
-1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000024240000757575750000000027272727272727371111111111110000181918191819181918191819000000001819181918191819181918190000
-1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000809000008090809000000002727272727272737111111111111000008090809080908090809080900000000010101010101240d080908090000
-1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000000018190000181918190000242727272727272727371111111111110000181918191819181918191819000000000101010101240d1d181918190000
+1c1c090809080908090809080908090809080908090809080908090809081c1c72733535181918191819181935357273000008090000000000000000000000000000000024240000000000000000000000002727272727272737111111111111000008093d3d080908093d3d0809000000000809080908090809080908090000
+1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000242400000000757575750000000027272727272727371111111111110000181918191819181918191819000000001819181918191819181918190000
+1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000008090000000008090809000000002727272727272737111111111111000008090809080908090809080900000000010101010101240d080908090000
+1c1c191819181918191819181918191819181918191819181918191819181c1c080908090809080908090809080908090000181900000000000000000000000000000000181900000000181918190000242727272727272727371111111111110000181918191819181918191819000000000101010101240d1d181918190000
 1c1c090809080908090809080908090809080908090809080908090809081c1c1819181918191819181918191819181900000809000000000000000000000000000000000000000000000000000000002427272727272727273711111111111100000809080908090809080908090100000001010101240d1d2d3d3d3d3d0100
 1c1c191819181918191819181918191819181918191819181918191819181c1c08090809080908090809080908090809000018190000000000000000000000000000000000000000000000000000000024243636363636363636111111111111000018191819181918191819181900000000010101240d1d2d3d3d3d3d3d0000
 1c1c090809080908090809080908090809080908090809080908090809081c1c18191819181918191819181918191819000008090000000000000000000000000000000000000000000000000000000024242626262626262626111111111111000008093d3d080908093d3d080900000000080908091d2d3d3d3d3d013d0000
@@ -2400,4 +2403,5 @@ __sfx__
 00020000137500d750007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700
 000400003701038030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 01080000125500d550125500f55000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
-00060000235502c5502c5000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
+0006000023f502df502c5000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
+000a00001d82000e001b8200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
