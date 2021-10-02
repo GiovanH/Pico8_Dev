@@ -279,6 +279,7 @@ function actor:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
  self.anchor = kwargs.anchor or self.anchor
+ self._apos = self.pos:__add(self.anchor)
 end
 function actor:rel_anchor(x, y)
  self.anchor = vec(self.size.x*x, self.size.y*y)
@@ -396,12 +397,14 @@ end
 -- :schedule(tics, callback) to execute callback in # ticks
 -- mclock is highly composite modulo clock
 -- % 1-15, 18, 20, 21-22, 24, 28...
-local stage = obj:extend{}
+local stage = obj:extend{
+
+}
 function stage:init()
  self.objects = {}
  self.uiobjects = {}
  self.mclock = 0
- self.camera = vec()  -- use for map offset
+ self.cam = vec()  -- use for map offset
  self._tasks = {}
 end
 function stage:add(object)
