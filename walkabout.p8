@@ -499,7 +499,6 @@ end
 
 function vec16(x, y) return vec(x, y)*16 end
 
-
 -- focus stack
 -- use this to keep track of what
 -- player input should be influencing.
@@ -747,7 +746,7 @@ local dialoger = entity:extend{
     -- press btn 5 to skip to the end of the current passage
     -- otherwise, print 1 character per frame
     -- with sfx about every 5 frames
-     if (i % 5 == 0) sfx(self.opts.blip or sfx_blip)
+    if (i % 5 == 0) sfx(self.opts.blip or sfx_blip)
     if not btnp(5) then
      yield()
     end
@@ -876,16 +875,16 @@ local choicer = entity:extend{
   color(7)
   local char_size_spaced = self.char_size + vec(0, 1)
   for i,v in ipairs(self.choices) do
-   print(v[1], 
+   print(v[1],
     mrconcatu(ppos:__add(
-     vec(2, i-1):dotp(char_size_spaced)
-    ), v[3] or 7))
+      vec(2, i-1):dotp(char_size_spaced)
+     ), v[3] or 7))
   end
   color(7)
   if (self.stage.mclock % 16 < 8) color(5)
-  print("> ", 
+  print("> ",
    ppos:__add(
-     vec(0, self.selected-1):dotp(char_size_spaced)
+    vec(0, self.selected-1):dotp(char_size_spaced)
    ):unpack())
  end,
  update = function(self)
@@ -956,7 +955,7 @@ local t_chest = t_sign:extend{
  bsize = vec8(2, 1),
  anchor = vec8(0,-1),
  getlines = {"you got a[] [???]"},
- emptylines = {"it's empty now"}
+ emptylines = {}
 }
 function t_chest:init(id, pos, ispr, isize, itcol)
  t_sign.init(self, pos, 003, vec8(2, 2))
@@ -1085,18 +1084,17 @@ function newportal(pos, dest, deststate)
     rndr(p_origin.x, p_extent.x),
     rndr(p_origin.y, p_extent.y)
    )
-   local p = particle(
-    point_in_plr_spr + vec(0, 4),
-    vec(rndr(-0.5, 0.5), rndr(-2.0, -1.7)),  --vel
-    grav,  -- acc
-    rndr(10, 15),  -- ttl
-    7  -- col
-   )
+   local p = cur_room:add(particle(
+     point_in_plr_spr + vec(0, 4),
+     vec(rndr(-0.5, 0.5), rndr(-2.0, -1.7)),  --vel
+     grav,  -- acc
+     rndr(10, 15),  -- ttl
+     7  -- col
+    ))
    function p:update()
     particle.update(self)
     self.z += (15 - self.ttl)*4
    end
-   cur_room:add(p)
   end
  end
  function o_portal:interact(p)
@@ -1425,24 +1423,20 @@ function room_complab()
  o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
  o_plush.lines = {
   "it's a stray fiduspawn host plush.",
-  "once hatched, fidusuckers \fawill\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."}
+  "once hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."}
  cur_room:add(o_plush)
 
  -- todo write dialogue
- o_scalemate = t_sign(vec(195, 70), 110, vec8(2, 1))
+ local o_scalemate = cur_room:add(t_sign(vec(195, 70), 110, vec8(2, 1)))
  o_scalemate.lines = {"todo stray scalemate"}
- cur_room:add(o_scalemate)
 
- o_corner = t_sign(vec16(0, 11), false, vec16(5, 5))
+ local o_corner = cur_room:add(t_sign(vec16(0, 11), false, vec16(5, 5)))
  o_corner.lines = {"this corner of the room feels strangely empty and unoccupied."}
- cur_room:add(o_corner)
 
-
-
- o_karkat = t_npc(vec(64, 64), 070)
+ local o_karkat = cur_room:add(t_npc(vec(64, 64), 070))
  o_karkat.color = 5
  function o_karkat:interact(player)
- local choices = {
+  local choices = {
    {"epilogues", function()
      self.lines = {
       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
@@ -1455,18 +1449,17 @@ function room_complab()
       "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
      }
      t_npc.interact(self, player) end}
-    }
+  }
   if chest_data['clabdollar'] then
    add(choices, {"boondollars", function()
-   self.lines = {"oh fuck no. get those out of my face",
-   "terezi's been filling the place with those. they're a worthless eyesore.",
-   "why do you think i put them in all the chests?"}
-   t_npc.interact(self, player)
-   end, 10})
+      self.lines = {"oh fuck no. get those out of my face",
+       "terezi's been filling the place with those. they're a worthless eyesore.",
+       "why do you think i put them in all the chests?"}
+      t_npc.interact(self, player)
+     end, 10})
   end
   choicer:prompt(choices)
  end
- cur_room:add(o_karkat)
 
  cur_room:add(newportal(center, room_t))
 
@@ -1480,7 +1473,7 @@ function room_t(v)
   t_chest('scalemate',vec8(5, 5), 142, vec(2, 2), 15)
  )
  o_chest.getlines = {"you got another scalemate!",
- "there was also a rope in the chest. you decide to leave it and take the scalemate far away." }
+  "there was also a rope in the chest. you decide to leave it and take the scalemate far away." }
  o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
 
  o_scalehang = actor(vec16(5, 3), 142, vec8(2, 2), {
@@ -1500,20 +1493,20 @@ function room_t(v)
  o_terezi.color = 3
  function o_terezi:interact(player)
   local choices = {
-    {"up to", function()
-      self.lines = {
-       "oh, 1'm not up to 4nyth1ng",
-       "just h4ng1ng 4round >:]"
-      }
-      t_npc.interact(self, player) end},
-   }
+   {"up to", function()
+     self.lines = {
+      "oh, 1'm not up to 4nyth1ng",
+      "just h4ng1ng 4round >:]"
+     }
+     t_npc.interact(self, player) end},
+  }
   if chest_data['scalemate'] then
    add(choices, {"scalemate", function()
-   self.lines = {"you c4n h4ng on3 1f you w4nt 1 dont m1nd"}
-   t_npc.interact(self, player)
-   end, 10})
+      self.lines = {"you c4n h4ng on3 1f you w4nt 1 dont m1nd"}
+      t_npc.interact(self, player)
+     end, 10})
   end
-   choicer:prompt(choices)
+  choicer:prompt(choices)
  end
  cur_room:add(o_terezi)
 
@@ -1529,11 +1522,10 @@ function room_lab(v)
  for y = 0, 3 do
   for x = 0, 1 do
    if (y == 2 and x == 0) goto continue
-   o_cap = actor(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3), {
-     anchor=vec8(0,-2)
-    })
+   o_cap = cur_room:add(actor(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3), {
+      anchor=vec8(0,-2)
+     }))
    o_cap.tcol = 10
-   cur_room:add(o_cap)
    ::continue::
   end
  end
@@ -1575,7 +1567,7 @@ function room_lab(v)
    "i'm more secret than the other frog.",
   }
   if chest_data['sciencetank'] then
-  local choices = {
+   local choices = {
     {"frog", closure(t_npc.interact, self, player)},
     {"science tank", function()
       self.lines = {
@@ -1587,7 +1579,7 @@ function room_lab(v)
   else
    t_sign.interact(self, player)
   end
-   
+
  end
  if (state_flags['frog_flipped']) cur_room:add(o_frog)
 
@@ -1609,8 +1601,7 @@ end
 
 function room_hallway(v)
  cur_room = room("hallway", 2, 1, 1, 1)
- o_player = t_player(v or vec(14, 72))
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(v or vec(14, 72)))
 
  greydoor = t_sign(vec8(7, 4), 030, vec8(2, 3))
  function greydoor:interact(player)
@@ -1637,38 +1628,33 @@ end
 
 function room_stair(v)
  cur_room = room("stairway", 7, 0, 1, 2)
- o_player = t_player(v or vec(18, 52))
+ o_player = cur_room:add(t_player(v or vec(18, 52)))
  o_player.facing = 'r'
- cur_room:add(o_player)
 
  cur_room:add(newtrig(vec(0, 32), vec(4, 32), room_hallway, {
     facing='l',
     pos=vec8(13, 9)
    }))
 
- o_plush = t_sign(vec(80, 141), 032, vec_spritesize*2)
+ local o_plush = cur_room:add(t_sign(vec(80, 141), 032, vec_spritesize*2))
  o_plush.lines = {"he must be lost.",
   "fortunately his owner can safely walk down here and retrieve him."}
- cur_room:add(o_plush)
 
- o_chest = t_chest('stair1',vec16(5, 2), 003, vec(2, 2))
+ local o_chest = cur_room:add(t_chest('stair1',vec16(5, 2), 003, vec(2, 2)))
  o_chest.getlines = {"you got a chest! the perfect container to store things in.","since only protagonists can open them, it's very secure."}
  o_chest.emptylines = {"it was only big enough to hold one chest."}
- cur_room:add(o_chest)
 
- o_chest2 = t_chest('stair2',vec16(2, 2), 206, vec(2, 2), 12)
+ local o_chest2 = cur_room:add(t_chest('stair2',vec16(2, 2), 206, vec(2, 2), 12))
  o_chest2.getlines = {
-  "you got minihoof!", 
+  "you got minihoof!",
   "small enough to sit on your desk, horse enough to be entirely inconvenient to care for.",
   "totally worth it though."
  }
- cur_room:add(o_chest2)
 
- o_stair_rail = mob(vec(65, 80), nil, vec(15, 1))
+ local o_stair_rail = cur_room:add(mob(vec(65, 80), nil, vec(15, 1)))
  o_stair_rail.obstructs = true
- cur_room:add(o_stair_rail)
 
- o_stair = mob(vec8(6.5, 10), nil, vec8(3, 5))
+ local o_stair = cur_room:add(mob(vec8(6.5, 10), nil, vec8(3, 5)))
  function o_stair:hittrigger(player)
   local speed = 2
   for x=1,speed do
@@ -1679,9 +1665,8 @@ function room_stair(v)
    end
   end
  end
- cur_room:add(o_stair)
 
- o_gio = t_npc(vec(33, 206), 064)
+ local o_gio = cur_room:add(t_npc(vec(33, 206), 064))
  o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
  function o_gio:interact(player)
@@ -1697,13 +1682,12 @@ function room_stair(v)
         self.facing = 'd'
         cur_room:schedule(10, function()
           sfx(sfx_wink)
-          local face = sprparticle(
-           179, vec_oneone,
-           self._apos:__add(4, 7),  -- get this while standing still
-           vec(0.03, 0), vec_zero, 50, nil, self.z+1
-          )
+          local face = cur_room:add(sprparticle(
+            179, vec_oneone,
+            self._apos:__add(4, 7),  -- get this while standing still
+            vec(0.03, 0), vec_zero, 50, nil, self.z+1
+           ))
           face.tcol = 14
-          cur_room:add(face)
          end)
         cur_room:schedule(60, function()
           focus:pop'anim'
@@ -1716,7 +1700,7 @@ function room_stair(v)
    end
   }
   if chest_data['limoncello'] then
-  local choices = {
+   local choices = {
     {"man", closure(t_npc.interact, self, player)},
     {"faygocello", function()
       self.lines = {
@@ -1728,7 +1712,7 @@ function room_stair(v)
    choicer:prompt(choices)
   else
    t_npc.interact(self, player)
-   
+
   end
  end
 
@@ -1736,51 +1720,46 @@ function room_stair(v)
   self.ismoving = focus:is'dialog'
   t_npc.update(self)
  end
- cur_room:add(o_gio)
 
- o_vue = t_sign(vec(72, 184), 122, vec8(2, 1), {
-   hbox_offset=vec8(0, 1)
-  })
+ local o_vue = cur_room:add(t_sign(vec(72, 184), 122, vec8(2, 1), {
+    hbox_offset=vec8(0, 1)
+   }))
  o_vue.tcol = 14
  o_vue.lines = {"it looks like he has been trying to copy media from the past into the present.",
   "a fool's errand."}
- cur_room:add(o_vue)
 
- o_great = t_button(vec16(1, 6), false, vec_spritesize*2)
+ local o_great = cur_room:add(t_button(vec16(1, 6), false, vec_spritesize*2))
  o_great.interact = function()
   room_turbine(vec(24, 122))
   o_player.facing = 'u'
  end
  o_great.draw = drawgreat
- cur_room:add(o_great)
 
- o_horsehole = t_sign(vec16(6, 7), false, vec8(1, 2))
+ local o_horsehole = cur_room:add(t_sign(vec16(6, 7), false, vec8(1, 2)))
  o_horsehole.lines = {"through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.", "you hear a distant winney."}
- cur_room:add(o_horsehole)
 
 end
 
 function room_turbine(v)
  cur_room = room("ventway", 3, 0, 2,1)
- o_player = t_player(v or vec(24, 112))
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(v or vec(24, 112)))
 
  o_player.bsize = vec(14, 10)  -- feel cramped
  o_player.hbox_offset = vec(-7, -10)
 
- o_great = t_button(vec16(12, 1), false, vec_spritesize*2)
+ local o_great = cur_room:add(t_button(vec16(12, 1), false, vec_spritesize*2))
  o_great.draw = drawgreat
- cur_room:add(o_great)
 
- o_chest = t_chest('frog',vec8(20, 11), 174, vec(2, 2))
- o_chest.getlines = {"you found a contraband amphibian!",
-  "he says something about being hidden better than the other frog.",
-  "you pet the frog."
- }
- o_chest.emptylines = {"you have left this chest so much the poorer."}
- if (not state_flags['frog_flipped']) cur_room:add(o_chest)
+ if (not state_flags['frog_flipped']) then
+  local o_chest = cur_room:add(t_chest('frog',vec8(20, 11), 174, vec(2, 2)))
+  o_chest.getlines = {"you found a contraband amphibian!",
+   "he says something about being hidden better than the other frog.",
+   "you pet the frog."
+  }
+  o_chest.emptylines = {"you have left this chest so much the poorer."}
+ end
 
- o_hole = mob(vec16(10, 3), 008, vec16(1, 1))
+ local o_hole = cur_room:add(mob(vec16(10, 3), 008, vec16(1, 1)))
  function o_hole:update()
   if state_flags['holefilled'] then
 
@@ -1820,7 +1799,6 @@ function room_turbine(v)
   if state_flags['holefilled'] then mob.draw(self)
   else mob.drawdebug(self) end
  end
- cur_room:add(o_hole)
 
  for fg in all{
   {4, 6, 10},
@@ -1830,7 +1808,7 @@ function room_turbine(v)
   {26, 12, 4},
   {20, 12, 2}
  } do
-  o_fg_rail = mob(vec8(fg[1], fg[2]), 117, vec8(fg[3], 1), {anchor=vec8(0,-1)})
+  local o_fg_rail = cur_room:add(mob(vec8(fg[1], fg[2]), 117, vec8(fg[3], 1), {anchor=vec8(0,-1)}))
   function o_fg_rail:draw()
    local width = self.hbox.w
    for x = 1, width/8 do
@@ -1839,20 +1817,18 @@ function room_turbine(v)
    end
    mob.drawdebug(self)
   end
-  cur_room:add(o_fg_rail)
+
  end
 
- o_andrew = t_sign(vec8(26, 11), 140, vec8(2, 3))
+ local o_andrew = cur_room:add(t_sign(vec8(26, 11), 140, vec8(2, 3)))
  npcify(o_andrew)
  o_andrew.tcol = 14
- cur_room:add(o_andrew)
 
- o_cantreach = t_sign(vec8(22,11), false, vec_spritesize)
+ local o_cantreach = cur_room:add(t_sign(vec8(22,11), false, vec_spritesize))
  o_cantreach.lines = {
   "try as you might, you can't cross the gap.",
   "probably would have been a disappointment, honestly."
  }
- cur_room:add(o_cantreach)
 
  cur_room:add(newtrig(vec8(2, 15.5), vec8(2, .5), room_stair, {
     facing='d',
@@ -1865,14 +1841,12 @@ end
 
 function room_roof(v)
  cur_room = room("john's roof", 5, 0, 1, 1)
- o_player = t_player(v or vec(16, 98))
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(v or vec(16, 98)))
 
- o_stair_rail = mob(vec(77, 48), nil, vec(3, 64))
+ local o_stair_rail = cur_room:add(mob(vec(77, 48), nil, vec(3, 64)))
  o_stair_rail.obstructs = true
- cur_room:add(o_stair_rail)
 
- o_chest = t_chest('pogo',vec8(7, 6), 078, vec(2, 2))
+ local o_chest = cur_room:add(t_chest('pogo',vec8(7, 6), 078, vec(2, 2)))
  o_chest.paltab = {[5]=7,[1]=6}
  o_chest.ipaltab = {[11]=12, [0]=6}
  o_chest.itcol = 3
@@ -1880,16 +1854,14 @@ function room_roof(v)
   "you got a rare off-color slimer!",
   "man, they don't make 'em like this anymore."
  }
- cur_room:add(o_chest)
 
- o_chest = t_chest('limoncello',vec8(13, 4), 176, vec_oneone)
+ local o_chest = cur_room:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone))
  o_chest.getlines = {
   "it's a glass of... what is that, faygo cut with limoncello?",
   "a drink for the direst of circumstances."
  }
- cur_room:add(o_chest)
 
- o_pogo = t_sign(vec8(12, 9), 078, vec_spritesize*2, {bsize=vec_spritesize})
+ local o_pogo = cur_room:add(t_sign(vec8(12, 9), 078, vec_spritesize*2, {bsize=vec_spritesize}))
  o_pogo.obstructs = true
  o_pogo.tcol = 3
  o_pogo.lines = {
@@ -1908,10 +1880,10 @@ function room_roof(v)
   end
   mob.update(self)
  end
- cur_room:add(o_pogo)
+
  o_pogo:update()
 
- o_lamppost = t_sign(vec8(6, 9), 078, vec_spritesize)
+ local o_lamppost = cur_room:add(t_sign(vec8(6, 9), 078, vec_spritesize))
  o_lamppost.obstructs = true
  o_lamppost.tcol = 14
  o_lamppost.lines = {
@@ -1945,7 +1917,6 @@ function room_roof(v)
   end
   mob.drawdebug(self)
  end
- cur_room:add(o_lamppost)
 
  cur_room:add(newtrig(vec8(1, 11), vec8(.8, 2), room_turbine, {
     facing='l',
@@ -1955,58 +1926,53 @@ end
 
 function room_ocean(v)
  cur_room = room("ocean roof", 5, 1, 1, 1)
- o_player = t_player(v or vec(104, 40))
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(v or vec(104, 40)))
+
  cur_room.paltab = {[3]=5, [11]=4}
 
- o_great = t_button(vec16(6, 1), false, vec_spritesize*2)
+ local o_great = cur_room:add(t_button(vec16(6, 1), false, vec_spritesize*2))
 
  o_great.interact = function()
   room_turbine(vec(121, 20))
  end
  o_great.draw = drawgreat
- cur_room:add(o_great)
 
- o_chest = t_chest('oceanr',vec8(11, 9), 181, vec(2,1))
+ local o_chest = cur_room:add(t_chest('oceanr',vec8(11, 9), 181, vec(2,1)))
  o_chest.getlines = {"you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.",
   "given that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.",
   "some enterprising sburb players have even weaponized this mechanic."}
- cur_room:add(o_chest)
 
-
- o_kanaya = t_npc(vec8(8, 9), 134)
+ local o_kanaya = cur_room:add(t_npc(vec8(8, 9), 134))
  o_kanaya.color = 3
  o_kanaya.blip = sfx_blip2
  function o_kanaya:interact(player)
   local choices = {
-    {"roof", function()
-      self.lines = {
-       "oH i'M jUST eNJOYING tHE vIEW",
-       "tHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT",
-       "i kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT",
-       "hABIT cAN bE a pOWERFUL tHING i sUPPOSE"
-      }
-      t_npc.interact(self, player) end},
-   }
+   {"roof", function()
+     self.lines = {
+      "oH i'M jUST eNJOYING tHE vIEW",
+      "tHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT",
+      "i kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT",
+      "hABIT cAN bE a pOWERFUL tHING i sUPPOSE"
+     }
+     t_npc.interact(self, player) end},
+  }
   if chest_data['clabfaygo'] then
    add(choices, {"redpop", function()
-   self.lines = {
-    "i", "eR", "uH", "wELL",
-    "i tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU"
-   }
-   t_npc.interact(self, player)
-   end, 10})
+      self.lines = {
+       "i", "eR", "uH", "wELL",
+       "i tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU"
+      }
+      t_npc.interact(self, player)
+     end, 10})
   end
-   choicer:prompt(choices)
+  choicer:prompt(choices)
  end
- cur_room:add(o_kanaya)
 
- o_stair = t_button(vec16(1, 4), false, vec_spritesize*2)
+ local o_stair = cur_room:add(t_button(vec16(1, 4), false, vec_spritesize*2))
  o_stair.interact = function()
   room_chess()
  end
  o_stair.obstructs = true
- cur_room:add(o_stair)
 
  function cur_room:update()
   if (self.mclock % 120 == 0) then
@@ -2027,11 +1993,11 @@ function room_ocean(v)
   room.update(self)
  end
 
- o_decorator = entity()
+ local o_decorator = cur_room:add(entity())
  function o_decorator:draw()
   rect(8, 24, 119, 87,4)
  end
- cur_room:add(o_decorator)
+
  sfx(sfx_creak)
 
 end
@@ -2051,8 +2017,7 @@ end
 
 function room_chess(v)
  cur_room = room("castle board", 3, 1, 2, 1)
- o_player = t_player(v or vec8(30, 10))
- cur_room:add(o_player)
+ o_player = cur_room:add(t_player(v or vec8(30, 10)))
 
  function drawpillar(self)
   local spx, spy = self._apos:unpack()
@@ -2067,21 +2032,20 @@ function room_chess(v)
  end
 
  for x in all{3, 11, 20, 28} do
-  o_pillar = mob(vec8(x,14), 120, vec_spritesize)
+  local o_pillar = cur_room:add(mob(vec8(x,14), 120, vec_spritesize))
   o_pillar.draw = drawpillar
   o_pillar.obstructs = true
-  cur_room:add(o_pillar)
+
  end
 
  -- Todo polish dialog
- o_stalemate_w = t_sign(vec8(7, 12), 066, vec8(2, 3))
+ local o_stalemate_w = cur_room:add(t_sign(vec8(7, 12), 066, vec8(2, 3)))
  npcify(o_stalemate_w)
  o_stalemate_w.lines = {
   "it's a north-going prospitian.",
   "it looks like they're stuck."}
- cur_room:add(o_stalemate_w)
 
- o_stalemate_b = t_sign(vec8(7, 11), 064, vec8(2, 3))
+ local o_stalemate_b = cur_room:add(t_sign(vec8(7, 11), 064, vec8(2, 3)))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab={[14]=0, [7]=0, [0]=7}
  o_stalemate_b.lines = {
@@ -2091,9 +2055,8 @@ function room_chess(v)
   if (p.pos.y > 96) return false
   t_sign.interact(self, p)
  end
- cur_room:add(o_stalemate_b)
 
- o_promoguy = t_npc(vec8(12.5, 7), 064)
+ local o_promoguy = cur_room:add(t_npc(vec8(12.5, 7), 064))
  o_promoguy.step = vec_x1
  o_promoguy.dynamic = true
  o_promoguy.facing = 'r'
@@ -2115,21 +2078,18 @@ function room_chess(v)
  o_promoguy.lines = {
   "i have to keep at it if i want to get that promotion.",
   "...what do you mean i'm going the wrong way?"}
- cur_room:add(o_promoguy)
 
- o_palt_portal = newportal(vec8(2, 9), room_complab)
+ local o_palt_portal = cur_room:add(newportal(vec8(2, 9), room_complab))
  o_palt_portal.paltab = {[1]=7,[2]=10}
- cur_room:add(o_palt_portal)
 
- o_chest_tile = t_chest('tilechest',vec8(6, 5), 008, vec(2, 2))
+ local o_chest_tile = cur_room:add(t_chest('tilechest',vec8(6, 5), 008, vec(2, 2)))
  o_chest_tile.paltab = {[5]=7,[1]=6}
  o_chest_tile.getlines = {
   "you found a floor tile!",
   "you are filled with relief at some semblance of linear progression."
  }
- cur_room:add(o_chest_tile)
 
- o_chest_chaos = t_chest('chaose',vec8(24, 13), 124, vec_oneone)
+ local o_chest_chaos = cur_room:add(t_chest('chaose',vec8(24, 13), 124, vec_oneone))
  o_chest_chaos.paltab = {[5]=7,[1]=6}
  o_chest_chaos.getlines = {
   "you found a chaos emerald! can you find them all?",
@@ -2138,33 +2098,31 @@ function room_chess(v)
  o_chest_chaos.emptylines = {
   "weird, there's room in here for like six or eight."
  }
- cur_room:add(o_chest_chaos)
 
- o_jade = t_npc(vec8(23, 6), 192)
+ local o_jade = cur_room:add(t_npc(vec8(23, 6), 192))
  o_jade.color = 11
  o_jade.bgcolor = 5
 
  -- todo more dialogue
  function o_jade:interact(player)
   local choices = {
-    {"walkaround", function()
-      self.lines = {
-       "yeah, it feels good to wake up and stretch my legs!",
-       "sometimes it feels like i'm gonna spend my whole life asleep. or awake, but... oh, you know!",
-       "but that's all going to change soon! i think..."
-      }
-      t_npc.interact(self, player) end},
-    {"dogs", function()
-      self.lines = {
-       "ok yes that's one thing about prospit that suuucks :(",
-       "the people here are all very nice but there's no dogs or animals anywhere",
-       "sure bec can be a bossypants sometimes but i still think these guys are missing out"
-      }
-      t_npc.interact(self, player) end},
-   }
-   choicer:prompt(choices)
-   end
- cur_room:add(o_jade)
+   {"walkaround", function()
+     self.lines = {
+      "yeah, it feels good to wake up and stretch my legs!",
+      "sometimes it feels like i'm gonna spend my whole life asleep. or awake, but... oh, you know!",
+      "but that's all going to change soon! i think..."
+     }
+     t_npc.interact(self, player) end},
+   {"dogs", function()
+     self.lines = {
+      "ok yes that's one thing about prospit that suuucks :(",
+      "the people here are all very nice but there's no dogs or animals anywhere",
+      "sure bec can be a bossypants sometimes but i still think these guys are missing out"
+     }
+     t_npc.interact(self, player) end},
+  }
+  choicer:prompt(choices)
+ end
 
  cur_room:add(newtrig(vec8(31.5, 8), vec8(.5, 3), room_ocean, {
     facing='r',
@@ -2202,7 +2160,7 @@ function _init()
 
  prettify_map()
  -- starting room
- room_ocean()
+ room_complab()
  focus:push'player'
 end
 
@@ -2342,6 +2300,7 @@ fffaaaaaaaafffffffffaaaaaaaafffffffffa9aaaffffffffffffffffffffffeeeeeeeeeeeeeeee
 fff99ffff99fffffffff99ffff99ffffffffff99ffffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
 fffeed22deefffffffffeed22deefffffffff2deeeffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0000000000000000
 ff2222222222fffffff2222222222ffffffff222222fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffff0000000000000000
+
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -2388,3 +2347,124 @@ __sfx__
 01080000125500d550125500f55000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
 0006000023f502df502c5000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
 000a00001d82000e001b8200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__music__
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+
