@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 8
+version 33
 __lua__
 
 -- title
@@ -11,22 +11,6 @@ local debug = true  -- (stat(6) == 'debug')
 
 -->8
 -- utility
-
--- focus stack
--- use this to keep track of what
--- player input should be influencing.
--- global because dialog/others are global.
--- get(), push(v), pop(expected)
-local focus = {}
-function focus:get() return self[#self] end
-function focus:is(q) return self:get() == q end
-function focus:isnt(q) return self:get() != q end
-function focus:push(s) add(self, s) end
-function focus:pop(expected)
- local r = deli(self)
- if (expected) assert(expected == r, "popped '" .. r .. "', not " .. expected)
- return r
-end
 
 -- any to string (dumptable)
 function tostring(any, depth)
@@ -57,6 +41,8 @@ function mrconcat(t, ...)
  end
  return unpack(t)
 end
+
+-- auto unpack first element
 function mrconcatu(o, ...)
  return mrconcat({o:unpack()}, ...)
 end
@@ -72,6 +58,7 @@ function paltt(t)
  palt()
  palt(0, false)
  palt(t, true)
+
 end
 
 -- random in range [a, b]
@@ -123,7 +110,6 @@ function obj:__call(...)
 end
 function obj:extend(proto)
  proto = proto or {}
- -- copy meta values, since lua doesn't walk the prototype chain to find them
  for k, v in pairs(self) do
   if sub(k, 1, 2) == "__" then
    proto[k] = v
@@ -171,9 +157,7 @@ function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
 function vec:unpack() return self.x, self.y end
 function vec:dotp(v, y)
  if (y) v = vec(v, y)
- -- temporarily de-zero-index
- local plusone = self+vec_oneone
- return vec((plusone.x * v.x), (plusone.y * v.y))-vec_oneone
+ return vec(self.x * v.x, self.y * v.y)
 end
 
 -- 2d bounding box
@@ -367,10 +351,10 @@ function mob:update()
 end
 function mob:drawdebug()
  if debug then
-  actor.drawdebug(self)
   -- print bbox and anchor/origin WITHIN box
   local drawbox = self.hbox:grow(vec_noneone)
   rect(mrconcatu(drawbox, 2))
+  actor.drawdebug(self)
  end
 end
 
@@ -424,6 +408,7 @@ function stage:add(object)
  add(self.objects, object)
  -- if (object.stage) del(object.stage.objects, object)
  object.stage = self
+ return object
 end
 function stage:_zsort()
  sort(self.objects, function(a) return a.z end)
@@ -432,7 +417,6 @@ function stage:update()
  -- update clock
  self.mclock = (self.mclock + 1) % 27720
  -- update tasks
- dbg.watch(self._tasks, "tasks")
  for handle, task in pairs(self._tasks) do
   task.ttl -= 1
   if task.ttl <= 0 then
@@ -472,6 +456,22 @@ end
 
 -->8
 -- game utility
+
+-- focus stack
+-- use this to keep track of what
+-- player input should be influencing.
+-- global because dialog/others are global.
+-- get(), push(v), pop(expected)
+local focus = {}
+function focus:get() return self[#self] end
+function focus:is(q) return self:get() == q end
+function focus:isnt(q) return self:get() != q end
+function focus:push(s) add(self, s) end
+function focus:pop(expected)
+ local r = deli(self)
+ if (expected) assert(expected == r, "popped '" .. r .. "', not " .. expected)
+ return r
+end
 
 -- interactive debugger
 -- based on work by mot ?tid=37822
