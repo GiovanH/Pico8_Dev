@@ -687,7 +687,13 @@ local dialoger = entity:extend{
   self.current_line_in_table = 1
   self.current_line_count = 1
   self.pause_dialog = false
-  if (message) self:format_message(message)
+  if (#message>0) then 
+   self:format_message(message) 
+   -- smooth out callback-only messages
+   self.lastbgcolor = self.bgcolor
+  else
+   self.bgcolor = self.lastbgcolor
+  end
   self.animation_loop = nil
   self.animation_loop = cocreate(self.animate_text)
  end,
@@ -2096,7 +2102,7 @@ function room_chess(v)
 
  local o_jade = cur_room:add(t_npc(vec8(23, 6), 192))
  o_jade.color = 11
- o_jade.bgcolor = 5
+ o_jade.bgcolor = 13
 
  -- todo more dialogue
  function o_jade:interact(player)
