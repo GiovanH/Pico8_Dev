@@ -47,6 +47,15 @@ function mrconcatu(o, ...)
  return mrconcat({o:unpack()}, ...)
 end
 
+-- tries to look up query in all arguements
+-- cannot be passed nils
+function chainmap(query, ...)
+ for i, o in ipairs{...} do
+  local v = o[query]
+  if (v != nil) return v
+ end
+end
+
 -- create a closure
 function closure(fn, ...)
  local vars = {...}

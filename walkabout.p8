@@ -78,6 +78,15 @@ function mrconcatu(o, ...)
  return mrconcat({o:unpack()}, ...)
 end
 
+-- tries to look up query in all arguements
+-- cannot be passed nils
+function chainmap(query, ...)
+ for i, o in ipairs{...} do
+  local v = o[query]
+  if (v != nil) return v
+ end
+end
+
 -- create a closure
 function closure(fn, ...)
  local vars = {...}
@@ -272,8 +281,8 @@ local entity = obj:extend{
 }
 function entity:init(kwargs)
  kwargs = kwargs or {}
- self.ttl = kwargs.ttl or self.ttl
- self.z = kwargs.z or self.z
+ self.ttl = chainmap('ttl', kwargs, self)
+ self.z = chainmap('z', kwargs, self)
 end
 function entity:update()
  if self.ttl then
@@ -309,7 +318,7 @@ local actor = entity:extend{
 function actor:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
- self.anchor = kwargs.anchor or self.anchor
+ self.anchor = chainmap('anchor', kwargs, self)
  self._apos = self.pos:__add(self.anchor)
 end
 function actor:rel_anchor(x, y)
@@ -365,9 +374,9 @@ local mob = actor:extend{
 function mob:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  actor.init(self, pos, spr_, size, kwargs)
- self.bsize = kwargs.bsize or self.bsize or self.size
- self.hbox_offset = kwargs.hbox_offset or self.hbox_offset
- self.dynamic = kwargs.dynamic
+ self.bsize = chainmap('bsize', kwargs, self) or self.size
+ self.hbox_offset = chainmap('hbox_offset', kwargs, self)
+ self.dynamic = chainmap('dynamic', kwargs)
  self.hbox = self:get_hitbox()
 -- assert(mob.bsize == nil, 'mob class bsize set')
 end
@@ -381,14 +390,14 @@ function mob:update()
  actor.update(self)
  if (self.dynamic) self.hbox = self:get_hitbox()
 end
--- function mob:drawdebug()
---  if debug then
---   -- print bbox and anchor/origin WITHIN box
---   local drawbox = self.hbox:grow(vec_noneone)
---   rect(mrconcatu(drawbox, 2))
---   actor.drawdebug(self)
---  end
--- end
+function mob:drawdebug()
+ if debug then
+  -- print bbox and anchor/origin WITHIN box
+  local drawbox = self.hbox:grow(vec_noneone)
+  rect(mrconcatu(drawbox, 2))
+  actor.drawdebug(self)
+ end
+end
 
 -- particle
 -- pos, vel, acc, ttl, col, z
@@ -688,8 +697,8 @@ local dialoger = entity:extend{
   self.current_line_in_table = 1
   self.current_line_count = 1
   self.pause_dialog = false
-  if (#message>0) then 
-   self:format_message(message) 
+  if (#message>0) then
+   self:format_message(message)
    -- smooth out callback-only messages
    self.lastbgcolor = self.bgcolor
   else
@@ -1172,7 +1181,7 @@ function t_player:init(pos, kwargs)
  kwargs = kwargs or {}
  mob.init(self, pos, 64, vec(16, 24),
   {bsize=vec(13, 7)})  -- a little smaller
- self.facing = kwargs.facing or self.facing
+ self.facing = chainmap('facing', kwargs, self)
 end
 function t_player:_moveif(step, facing)
  local npos = self.pos + step
@@ -1402,7 +1411,6 @@ function room_complab()
  o_computer3.tcol = 15
  cur_room:add(o_computer3)
 
- -- todo polish dialogue
  o_computer4 = t_sign(vec8(27, 1), 010, vec8(2, 1), {
    bsize=vec_16_16})
  o_computer4.paltab = {[6]=3}
@@ -1455,7 +1463,9 @@ function room_complab()
 
  -- todo write dialogue
  local o_scalemate = cur_room:add(t_sign(vec(195, 70), 110, vec8(2, 1)))
- o_scalemate.lines = {"todo stray scalemate"}
+ o_scalemate.lines = {
+  "someone has tied a noose around this plush dragon and left it lying on the floor\rlooking around, you don't see anything nearby you could hang a rope from."
+ }
 
  local o_corner = cur_room:add(t_sign(vec16(0, 11), false, vec16(5, 5)))
  o_corner.lines = {"this corner of the room feels strangely empty and unoccupied.", "yes, both."}
@@ -1470,14 +1480,13 @@ function room_complab()
    {"dave", {
      "i have had literally one interaction with the guy and it ended up being all about vriska.",
      "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
-     "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
+     "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, people are fucking dead and i'm not going to chose this particular moment to star tlisting off all the cool perks of getting murdered."
     }}
   }
   if chest_data['clabdollar'] then
    add(choices, {"boondollars", {
       "oh fuck no. get those out of my face",
-      "terezi's been filling the place with those. they're a worthless eyesore.",
-      "why do you think i put them in all the chests?"}, 10})
+      "terezi's been filling the place with those. they're a worthless eyesore.\rwhy do you think i put them in all the chests?"}, 10})
   end
   t_npc.interact(self, player, choices)
  end
@@ -1515,8 +1524,7 @@ function room_t(v)
  function o_terezi:interact(player)
   local choices = {
    {"up to", {
-     "oh, 1'm not up to 4nyth1ng",
-     "just h4ng1ng 4round >:]"
+     "oh, 1'm not up to 4nyth1ng\rjust h4ng1ng 4round >:]"
     }},
   }
   if chest_data['scalemate'] then
