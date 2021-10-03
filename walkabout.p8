@@ -938,9 +938,10 @@ local t_sign = mob:extend{
  blip = sfx_blip,
  talkedto = 0
 }
-function t_sign:interact(player)
+function t_sign:interact(player, lines)
+ lines = lines or self.lines
  if (player.cooldown > 0) return false
- for _, v in ipairs(self.lines or {'no problem here.'}) do
+ for _, v in ipairs(lines) do
   if type(v) == 'function' then
    dialoger:enqueue('', {callback=v})
   else
@@ -977,13 +978,11 @@ function t_chest:interact(player)
 
   self.stage:schedule(18, function()
     focus:pop'anim'
-    self.lines = self.getlines
-    t_sign.interact(self, player)
+    t_sign.interact(self, player, self.getlines)
     dialoger:enqueue('', {callback=function() self.ttl = nil end})
    end)
  else
-  self.lines = self.emptylines
-  t_sign.interact(self, player)
+  t_sign.interact(self, player, self.emptylines)
  end
 end
 function t_chest:draw()
@@ -1034,7 +1033,7 @@ function t_npc:init(...)
  self.spr0 = self.spr
  npcify(self)
 end
-function t_npc:interact(player)
+function t_npc:interact(player, lines)
  local facetable = {
   d='u',
   u='d',
@@ -1043,7 +1042,7 @@ function t_npc:interact(player)
  }
  self.facing = facetable[player.facing]
  self.istalking = true
- t_sign.interact(self, player)
+ t_sign.interact(self, player, lines)
  dialoger:enqueue('',{callback=function() self.istalking = false end})
 end
 function t_npc:draw()
@@ -1391,7 +1390,11 @@ function room_complab()
  o_computer4 = t_sign(vec8(27, 1), 010, vec8(2, 1), {
    bsize=vec_16_16})
  o_computer4.paltab = {[6]=3}
- o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green."}
+ o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green.",
+  "actually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally. ",
+  "and then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?",
+  "rough. but it looks like greeno here has salvaged things, somehow."
+ }
  -- o_computer4:addline(
  --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
  cur_room:add(o_computer4)
@@ -1445,25 +1448,20 @@ function room_complab()
  o_karkat.color = 5
  function o_karkat:interact(player)
   local choices = {
-   {"epilogues", function()
-     self.lines = {
+   {"epilogues", closure(t_npc.interact, self, player{
       "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
-     }
-     t_npc.interact(self, player) end},
-   {"dave", function()
-     self.lines = {
+     })},
+   {"dave", closure(t_npc.interact, self, player, {
       "i have had literally one interaction with the guy and it ended up being all about vriska.",
       "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
       "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
-     }
-     t_npc.interact(self, player) end}
+     })}
   }
   if chest_data['clabdollar'] then
    add(choices, {"boondollars", function()
-      self.lines = {"oh fuck no. get those out of my face",
+      t_npc.interact(self, player, {"oh fuck no. get those out of my face",
        "terezi's been filling the place with those. they're a worthless eyesore.",
-       "why do you think i put them in all the chests?"}
-      t_npc.interact(self, player)
+       "why do you think i put them in all the chests?"})
      end, 10})
   end
   choicer:prompt(choices)
@@ -1501,17 +1499,15 @@ function room_t(v)
  o_terezi.color = 3
  function o_terezi:interact(player)
   local choices = {
-   {"up to", function()
-     self.lines = {
+   {"up to", closure(t_npc.interact, self, player, {
       "oh, 1'm not up to 4nyth1ng",
       "just h4ng1ng 4round >:]"
-     }
-     t_npc.interact(self, player) end},
+     })},
   }
   if chest_data['scalemate'] then
    add(choices, {"scalemate", function()
-      self.lines = {"you c4n h4ng on3 1f you w4nt 1 dont m1nd"}
-      t_npc.interact(self, player)
+      t_npc.interact(self, player, 
+       {"you c4n h4ng on3 1f you w4nt 1 dont m1nd"})
      end, 10})
   end
   choicer:prompt(choices)
@@ -1577,11 +1573,9 @@ function room_lab(v)
   if chest_data['sciencetank'] then
    local choices = {
     {"frog", closure(t_npc.interact, self, player)},
-    {"science tank", function()
-      self.lines = {
+    {"science tank", closure(t_npc.interact, self, player, {
        "we use those to make the frogs."
-      }
-      t_npc.interact(self, player) end, 10}
+      }), 10}
    }
    choicer:prompt(choices)
   else
@@ -1711,12 +1705,10 @@ function room_stair(v)
     {"man", closure(t_npc.interact, self, player)}
    }
   if chest_data['limoncello'] then
-   add(choices, {"faygocello", function()
-      self.lines = {
+   add(choices, {"faygocello", closure(t_npc.interact, self, player, {
        "...",
-       "you are right to hold me accountable for my sins."
-      }
-      t_npc.interact(self, player) end, 10})
+       "you are right to hold me to account for my sins."
+      }), 10})
   end
   if #choices > 1 then
    choicer:prompt(choices)
@@ -1770,6 +1762,7 @@ function room_turbine(v)
  end
 
  local o_hole = cur_room:add(mob(vec16(10, 3), 008, vec16(1, 1)))
+ o_hole.tcol = 15
  function o_hole:update()
   if state_flags['holefilled'] then
 
@@ -1908,7 +1901,7 @@ function room_roof(v)
       dialoger:enqueue("ok cool") end},
    }
   end,
-  closure(poke, 0x5f80, true)
+  closure(poke, 0x5f80, 1)
  }
 
  function o_lamppost:draw()
@@ -1955,21 +1948,19 @@ function room_ocean(v)
  o_kanaya.blip = sfx_blip2
  function o_kanaya:interact(player)
   local choices = {
-   {"roof", function()
-     self.lines = {
+   {"roof", closure(t_npc.interact, self, player, {
       "oH i'M jUST eNJOYING tHE vIEW",
       "tHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT",
       "i kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT hABIT cAN bE a pOWERFUL tHING i sUPPOSE"
-     }
-     t_npc.interact(self, player) end},
+     })},
   }
   if chest_data['clabfaygo'] then
    add(choices, {"redpop", function()
-      self.lines = {
+      t_npc.interact(self, player, {
        "i\reR\ruH\rwELL",
-       "i tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU"
-      }
-      t_npc.interact(self, player)
+       "i tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU",
+       "pERHAPS gAMZEE mIGHT bE mORE INCLINED\roR eLSE sOMEONE nEARER a dRAIN"
+      })
      end, 10})
   end
   choicer:prompt(choices)
@@ -1984,16 +1975,20 @@ function room_ocean(v)
  function cur_room:update()
   if (self.mclock % 120 == 0) then
    local fish = sprparticle(180, vec_oneone,
-    vec8(9+rnd(2), 2), vec(-3, -4), vec(0, 0.4), 18, nil, 16)
+    vec8(rndr(9, 11), 2), vec(-3, -4), vec(0, 0.4), 18, nil, 16)
    fish.tcol = 2
    function fish:update()
     self.hbox = bbox(self.pos, vec_spritesize)
     particle.update(self)
    end
-   function fish:interact()
+   function fish:interact(player)
     sfx(sfx_fishcatch)
     dialoger:enqueue("you caught a fish!")
-    dialoger:enqueue("but nothing happened.")
+    dialoger:enqueue("but nothing happened.", {callback=function()
+     player.facing = 'd'
+     t_npc.interact(o_kanaya, player, {"\f3wHAT aRE yOU dOING oVER tHERE\roR dO i nOT wANT tO kNOW\roN cLOSER iNSPECTION iM tHINKING iT iS tHE lATTER"})
+     end})
+    -- todo kanaya bounce
    end
    self:add(fish)
   end
@@ -2113,21 +2108,23 @@ function room_chess(v)
  -- todo more dialogue
  function o_jade:interact(player)
   local choices = {
-   {"walkaround", function()
-     self.lines = {
-      "yeah, it feels good to wake up and stretch my legs!",
+   {"walkaround", closure(t_npc.interact, self, player, {
+      "yeah, it feels good to wake up and stretch my legs!!",
       "sometimes it feels like i'm gonna spend my whole life asleep. or awake, but... oh, you know!",
-      "but that's all going to change soon! i think..."
-     }
-     t_npc.interact(self, player) end},
-   {"dogs", function()
-     self.lines = {
+      "but that's all going to change soon! i think....."
+     })},
+   {"dogs", closure(t_npc.interact, self, player, {
       "ok yes that's one thing about prospit that suuucks :(",
       "the people here are all very nice but there's no dogs or animals anywhere",
-      "sure bec can be a bossypants sometimes but i still think these guys are missing out"
-     }
-     t_npc.interact(self, player) end},
+      "sure bec can be a bossypants sometimes but i still think these guys are missing out!"
+     })},
   }
+  -- todo frogs
+  if chest_data['tilechest'] then
+   add(choices, {"frog", function()
+      t_npc.interact(self, player, {"TODO JADE FROG"})
+     end, 10})
+  end
   choicer:prompt(choices)
  end
 
@@ -2356,30 +2353,38 @@ fff2222222222ffffff2222112222fffffffff22222ffffffff1111111111ffffff1111111111fff
 5cccccc651111111111111158880008e2f3333ff002dd8ef77aa99800561d6650000000000000000000000000000000000000000000000000000000000000000
 dd1111d651111111111111158888888eff7733f2002dc8eee9998000056665550000000000000000000000000000000000000000000000000000000000000000
 0dddddd11555111111115551eeeeeeee227722f20022222200000000005550000000000000000000000000000000000000000000000000000000000000000000
-fffffff111111fffff111111fffffffff11ffff111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffffcccccccccccccce1
-fffff1111111fffffff1111111fffffff11111111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fcccccc1eccce0e1e
-fff11111111fffffffff11111111ffffff1111111111ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fcccccce1ee0070ee
-1111111111111fffff1111111111111fff11111111111fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccee107070ec
-1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fccccccc1e077770c
-f11111111111111f111111111111111ff11111111111111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccce0777770c
-111177111177111f111111111111111ff11111117771111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fccccccc007077770
-111ddd771ddd711f111111111111111ff1111117ddd7111fffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555fccc0000e07077770
-11d777d7d777d1fff11111111111111ff111171d777d11ffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5fc00770ee07700770
-11d711d7d117d1ffff111111111111fff111177d711d1fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f077770ee0777700c
-117ddd777ddd71ffff111111111111fff1111777ddd71fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f070e770077770ccc
-f117777777711fffff111111111111fff111777777771fffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f0700777777070ccc
-f11177dd77111ffffff1111111111fffff1117777d71ffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff5dddddddddddd5f00c0707007070ccc
-ff1117767111fffffff1111111111fffff111177771fffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0c07707007070ccc
-ff1a911119a1ffffffff11111111fffffff1111111ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc07070c07700ccc
-fffa9aaaa9afffffffffa111111affffffff1a9aa9ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115fcc00c00cc00ccccc
-fff9aaaaaa9fffffffff9aaaaaa9fffffffffaa99affffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fffa9aaaa9afffffffffa9aaaa9afffffffffaaaa9ffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fff9a9aa9a9fffffffff9a9aa9a9fffffffff9999affffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fffaaa99aaafffffffffaaa99aaafffffffffaaaaaffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fffaaaaaaaafffffffffaaaaaaaafffffffffa9aaaffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fff99ffff99fffffffff99ffff99ffffffffff99ffffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff51111111111115f0000000000000000
-fffeed22deefffffffffeed22deefffffffff2deeeffffffffffffffffffffffeeeeeeeeeeeeeeeefffffffffffffffff55555555555555f0000000000000000
-ff2222222222fffffff2222222222ffffffff222222fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffff0000000000000000
+fffffff111111fffff111111fffffffff11ffff111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5555555555555555cccccccccccccce1
+fffff1111111fffffff1111111fffffff11111111111ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5666666666666665cccccc1eccce0e1e
+fff11111111fffffffff11111111ffffff1111111111ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd65cccccce1ee0070ee
+1111111111111fffff1111111111111fff11111111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd65ccccccee107070ec
+1111111111111fffff1111111111111ff111111111111fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5666666666666665ccccccc1e077770c
+f11111111111111f111111111111111ff11111111111111fffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd65ccccccce0777770c
+111177111177111f111111111111111ff11111117771111fffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd65ccccccc007077770
+111ddd771ddd711f111111111111111ff1111117ddd7111fffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5666666666666665ccc0000e07077770
+11d777d7d777d1fff11111111111111ff111171d777d11ffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd65c00770ee07700770
+11d711d7d117d1ffff111111111111fff111177d711d1fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd65077770ee0777700c
+117ddd777ddd71ffff111111111111fff1111777ddd71fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5666666666666665070e770077770ccc
+f117777777711fffff111111111111fff111777777771fffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd650700777777070ccc
+f11177dd77111ffffff1111111111fffff1117777d71ffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56dddddddddddd6500c0707007070ccc
+ff1117767111fffffff1111111111fffff111177771fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff56666666666666650c07707007070ccc
+ff1a911119a1ffffffff11111111fffffff1111111ffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165cc07070c07700ccc
+fffa9aaaa9afffffffffa111111affffffff1a9aa9ffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165cc00c00cc00ccccc
+fff9aaaaaa9fffffffff9aaaaaa9fffffffffaa99affffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165fffff11111ffffff
+fffa9aaaa9afffffffffa9aaaa9afffffffffaaaa9ffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165ff11111111111fff
+fff9a9aa9a9fffffffff9a9aa9a9fffffffff9999affffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165fff911111119ffff
+fffaaa99aaafffffffffaaa99aaafffffffffaaaaaffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165fff991111199ffff
+fffaaaaaaaafffffffffaaaaaaaafffffffffa9aaaffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165fff111dd1d11ffff
+fff99ffff99fffffffff99ffff99ffffffffff99ffffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5611111111111165fff1878d8881ffff
+fffeed22deefffffffffeed22deefffffffff2deeeffffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5666666666666665fff117888811ffff
+ff2222222222fffffff2222222222ffffffff222222fffffffffffffffffffffeeeeeeeeeeeeeeeeffffffffffffffff5555555555555555fff11d171611ffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fff11dd16611ffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffff1001001fffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffff00300ffffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffff03330ffffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffff01110ffffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffff00000ffffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffff00000ffffff
+0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffff2222222fffff
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -2426,3 +2431,7 @@ __sfx__
 01080000125500d550125500f55000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
 0006000023f502df502c5000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
 000a00001d82000e001b8200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+011d00000f150001000f150001000e1500010000100001000f1500010011150001000010013150111500f1500e1500010000100001000c1500010007150001000010000100000000000000000000000000000000
+013300000f5550f5550e555000000f5551155513551115550f5550e555000000c55507555000000655500000055550000006555000000f555185551255500000185551a555000001f5551d5551b5551a55500000
+011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
