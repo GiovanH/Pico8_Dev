@@ -8,21 +8,12 @@ __lua__
 -- jade sprite
 -- jade dialog
 -- stray scalemate
--- complab fiduspawn plush
 -- terezi dialog tree
--- kanaya placement
--- kanaya dialog
 
 -- music item with disc/mp3 icon
--- pico-8 coroutines, seriously
--- fun values
---  hallway randomizer
---  lamp hint
+-- terezi nendroid
 -- fake juju (it's just a lolilpop)
 -- a modern computer, but it doesn't have magic time powers
--- depending on where you flip the switch there is a frog in a different place
-
--- keyboard prompt: ASSSUME THE POSITION
 
 -- global vars
 local o_player
@@ -356,7 +347,7 @@ function actor:draw(frame)
  if (frame != false and frame != nil) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
  -- end
  pal()
- -- self:drawdebug()
+-- self:drawdebug()
 end
 
 -- mob: entity with a bounding box and dynamism
@@ -377,7 +368,7 @@ function mob:init(pos, spr_, size, kwargs)
  self.hbox_offset = kwargs.hbox_offset or self.hbox_offset
  self.dynamic = kwargs.dynamic
  self.hbox = self:get_hitbox()
- -- assert(mob.bsize == nil, 'mob class bsize set')
+-- assert(mob.bsize == nil, 'mob class bsize set')
 end
 function mob:get_hitbox(pos)
  return bbox(
@@ -936,11 +927,13 @@ local choicer = entity:extend{
 local t_sign = mob:extend{
  lines = nil,
  blip = sfx_blip,
- talkedto = 0
+ talkedto = 0,
+ istalking = false
 }
 function t_sign:interact(player, lines)
  lines = lines or self.lines
  if (player.cooldown > 0) return false
+ self.istalking = true
  for _, v in ipairs(lines) do
   if type(v) == 'function' then
    dialoger:enqueue('', {callback=v})
@@ -948,6 +941,7 @@ function t_sign:interact(player, lines)
    dialoger:enqueue(v, self)
   end
  end
+ dialoger:enqueue('',{callback=function() self.istalking = false end})
  self.talkedto += 1
 end
 
@@ -1011,7 +1005,7 @@ function t_chest:draw()
   spr(003, spx, spy, 2,2)
  end
  pal()
- -- mob.drawdebug(self)
+-- mob.drawdebug(self)
 end
 
 function npcify(amob)
@@ -1033,7 +1027,7 @@ function t_npc:init(...)
  self.spr0 = self.spr
  npcify(self)
 end
-function t_npc:interact(player, lines)
+function t_npc:interact(player, choices)
  local facetable = {
   d='u',
   u='d',
@@ -1041,9 +1035,23 @@ function t_npc:interact(player, lines)
   r='l'
  }
  self.facing = facetable[player.facing]
- self.istalking = true
- t_sign.interact(self, player, lines)
- dialoger:enqueue('',{callback=function() self.istalking = false end})
+ for i, s in ipairs(choices) do
+  if type(choices[i]) == 'string' then
+   -- choices is a list of lines
+   -- enclose choice second part (lines => closure)
+   choices = {{'default', closure(t_sign.interact, self, player, choices)}}
+   break
+  else
+   -- choice is a list of choices proper (label, lines, optionals)
+   local lines = choices[i][2]
+   choices[i][2] = closure(t_sign.interact, self, player, lines)
+  end
+ end
+ if #choices > 1 then
+  choicer:prompt(choices)
+ else
+  choices[1][2]()
+ end
 end
 function t_npc:draw()
  self.flipx = (self.facing == 'l')
@@ -1267,7 +1275,7 @@ function t_player:draw()
   self.anchor = vec(-8, -24)
  end
  mob.draw(self)
- -- if (debug and self.ibox) rect(mrconcatu(self.ibox, 10))
+-- if (debug and self.ibox) rect(mrconcatu(self.ibox, 10))
 end
 
 local room = stage:extend{
@@ -1320,25 +1328,25 @@ function room:draw()
  self.cam = cam
  stage.draw(self)
 
- -- camera()
- -- if debug and o_player then
+-- camera()
+-- if debug and o_player then
 
- --  local ui_offset = cam - self.box_px.origin
- --  poke(0x5f2d, 1)
- --  local mous = vec(stat(32), stat(33))
- --  pset(mrconcatu(mous, 10))
- --  mous += ui_offset
+--  local ui_offset = cam - self.box_px.origin
+--  poke(0x5f2d, 1)
+--  local mous = vec(stat(32), stat(33))
+--  pset(mrconcatu(mous, 10))
+--  mous += ui_offset
 
- --  prints('plr  ' .. tostr(o_player.pos), 0, 0)
- --  prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
- --  prints('-16' .. tostr(o_player.pos:__div(16):floor()), 68, 8)
- --  line(67, 2, 67, 10)
- --  prints('room ' .. tostr(self.map_origin/16), 0, 8)
- --  prints('mous ' .. tostr(mous), 0, 16)
- --  prints('-- 8' .. tostr(mous:__div(8):floor()), 64, 16)
- --  prints('-16' .. tostr(mous:__div(16):floor()), 68, 24)
- --  line(67, 18, 67, 26)
- -- end
+--  prints('plr  ' .. tostr(o_player.pos), 0, 0)
+--  prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
+--  prints('-16' .. tostr(o_player.pos:__div(16):floor()), 68, 8)
+--  line(67, 2, 67, 10)
+--  prints('room ' .. tostr(self.map_origin/16), 0, 8)
+--  prints('mous ' .. tostr(mous), 0, 16)
+--  prints('-- 8' .. tostr(mous:__div(8):floor()), 64, 16)
+--  prints('-16' .. tostr(mous:__div(16):floor()), 68, 24)
+--  line(67, 18, 67, 26)
+-- end
 end
 
 function drawgreat(self)
@@ -1422,7 +1430,7 @@ function room_complab()
 
  o_p8cart = t_sign(vec8(1, 12), 183, vec_spritesize)
  o_p8cart.lines = {"it's a pico-8 game cartridge. these things have a maximum capacity of about 90% the size of just the first animated panel of mspa, so programming one is quite the challenge.",
- "you think you'll stick with godot instead."}
+  "you think you'll stick with godot instead."}
  cur_room:add(o_p8cart)
 
  o_cards = t_sign(vec(184, 194), 034, vec(16, 8))
@@ -1448,23 +1456,22 @@ function room_complab()
  o_karkat.color = 5
  function o_karkat:interact(player)
   local choices = {
-   {"epilogues", closure(t_npc.interact, self, player{
-      "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
-     })},
-   {"dave", closure(t_npc.interact, self, player, {
-      "i have had literally one interaction with the guy and it ended up being all about vriska.",
-      "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
-      "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
-     })}
+   {"epilogues", {
+     "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
+    }},
+   {"dave", {
+     "i have had literally one interaction with the guy and it ended up being all about vriska.",
+     "because of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.",
+     "i'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, [todo] is goddamn dead and i'm not going to chose this particular moment to startlisting off all the cool perks of getting murdered."
+    }}
   }
   if chest_data['clabdollar'] then
-   add(choices, {"boondollars", function()
-      t_npc.interact(self, player, {"oh fuck no. get those out of my face",
-       "terezi's been filling the place with those. they're a worthless eyesore.",
-       "why do you think i put them in all the chests?"})
-     end, 10})
+   add(choices, {"boondollars", {
+      "oh fuck no. get those out of my face",
+      "terezi's been filling the place with those. they're a worthless eyesore.",
+      "why do you think i put them in all the chests?"}, 10})
   end
-  choicer:prompt(choices)
+  t_npc.interact(self, player, choices)
  end
 
  cur_room:add(newportal(center, room_t))
@@ -1499,18 +1506,15 @@ function room_t(v)
  o_terezi.color = 3
  function o_terezi:interact(player)
   local choices = {
-   {"up to", closure(t_npc.interact, self, player, {
-      "oh, 1'm not up to 4nyth1ng",
-      "just h4ng1ng 4round >:]"
-     })},
+   {"up to", {
+     "oh, 1'm not up to 4nyth1ng",
+     "just h4ng1ng 4round >:]"
+    }},
   }
   if chest_data['scalemate'] then
-   add(choices, {"scalemate", function()
-      t_npc.interact(self, player, 
-       {"you c4n h4ng on3 1f you w4nt 1 dont m1nd"})
-     end, 10})
+   add(choices, {"scalemate", {"you c4n h4ng on3 1f you w4nt 1 dont m1nd"}, 10})
   end
-  choicer:prompt(choices)
+  t_npc.interact(self, player, choices)
  end
  cur_room:add(o_terezi)
 
@@ -1542,7 +1546,6 @@ function room_lab(v)
    choicer:prompt{
     {"flip it", function()
       state_flags['frog_flipped'] = not state_flags['frog_flipped']
-      printh(state_flags['frog_flipped'])
       self.flipx = state_flags.frog_flipped
       sfx(sfx_creak)
       player.cooldown += 2
@@ -1572,8 +1575,8 @@ function room_lab(v)
   }
   if chest_data['sciencetank'] then
    local choices = {
-    {"frog", closure(t_npc.interact, self, player)},
-    {"science tank", closure(t_npc.interact, self, player, {
+    {"frog", closure(t_sign.interact, self, player)},
+    {"science tank", closure(t_sign.interact, self, player, {
        "we use those to make the frogs."
       }), 10}
    }
@@ -1672,49 +1675,42 @@ function room_stair(v)
  o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
  function o_gio:interact(player)
-  self.lines = {
-   "oh. there is a man here.",
-   function()
-    if speedshoes then
-     dialoger:enqueue("you do not give him anything.")
-    else
-     dialoger:enqueue("he gave you an ❎ button. in addition to the rest.", {callback=function()
-
-        focus:push'anim'
-        self.facing = 'd'
-        cur_room:schedule(10, function()
-          sfx(sfx_wink)
-          local face = cur_room:add(sprparticle(
-            179, vec_oneone,
-            self._apos:__add(4, 7),  -- get this while standing still
-            vec(0.03, 0), vec_zero, 50, nil, self.z+1
-           ))
-          face.tcol = 14
-         end)
-        cur_room:schedule(60, function()
-          focus:pop'anim'
-         end)
-
-       end})
-     speedshoes = true
-     sfx(000)
-    end
-   end
-  }
   local choices = {
-    {"man", closure(t_npc.interact, self, player)}
-   }
+   {"man", {
+     "oh. there is a man here.",
+     function()
+      if speedshoes then
+       dialoger:enqueue("you do not give him anything.")
+      else
+       dialoger:enqueue("he gave you an ❎ button. in addition to the rest.", {callback=function()
+          focus:push'anim'
+          self.facing = 'd'
+          cur_room:schedule(10, function()
+            sfx(sfx_wink)
+            local face = cur_room:add(sprparticle(
+              179, vec_oneone,
+              self._apos:__add(4, 7),  -- get this while standing still
+              vec(0.03, 0), vec_zero, 50, nil, self.z+1
+             ))
+            face.tcol = 14
+           end)
+          cur_room:schedule(60, function()
+            focus:pop'anim'
+           end)
+         end}) -- end wink anim
+       speedshoes = true
+       sfx(000)
+      end -- end nospeedshoes else
+     end -- end man func
+    }}
+  } 
   if chest_data['limoncello'] then
-   add(choices, {"faygocello", closure(t_npc.interact, self, player, {
-       "...",
-       "you are right to hold me to account for my sins."
-      }), 10})
+   add(choices, {"faygocello", {
+      "...",
+      "you are right to hold me to account for my sins."
+     }, 10})
   end
-  if #choices > 1 then
-   choicer:prompt(choices)
-  else
-   t_npc.interact(self, player)
-  end
+  t_npc.interact(self, player, choices)
 
  end
 
@@ -1800,7 +1796,7 @@ function room_turbine(v)
  o_hole.size = vec16(1)
  function o_hole:draw()
   if (state_flags['holefilled']) mob.draw(self)
-  -- else mob.drawdebug(self) end
+ -- else mob.drawdebug(self) end
  end
 
  for fg in all{
@@ -1818,7 +1814,7 @@ function room_turbine(v)
     paltt(0)
     spr(self.spr, self._apos:__add(vec8(x-1,0)):unpack())
    end
-   -- mob.drawdebug(self)
+  -- mob.drawdebug(self)
   end
 
  end
@@ -1918,7 +1914,7 @@ function room_roof(v)
    pset(self.pos.x+3, self.pos.y-28, 9)
    if (rndi(2) != 0) self.flicker = false
   end
-  -- mob.drawdebug(self)
+ -- mob.drawdebug(self)
  end
 
  cur_room:add(newtrig(vec8(1, 11), vec8(.8, 2), room_turbine, {
@@ -1948,22 +1944,20 @@ function room_ocean(v)
  o_kanaya.blip = sfx_blip2
  function o_kanaya:interact(player)
   local choices = {
-   {"roof", closure(t_npc.interact, self, player, {
-      "oH i'M jUST eNJOYING tHE vIEW",
-      "tHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT",
-      "i kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT hABIT cAN bE a pOWERFUL tHING i sUPPOSE"
-     })},
+   {"roof", {
+     "oH i'M jUST eNJOYING tHE vIEW",
+     "tHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT",
+     "i kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT hABIT cAN bE a pOWERFUL tHING i sUPPOSE"
+    }},
   }
   if chest_data['clabfaygo'] then
-   add(choices, {"redpop", function()
-      t_npc.interact(self, player, {
-       "i\reR\ruH\rwELL",
-       "i tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU",
-       "pERHAPS gAMZEE mIGHT bE mORE INCLINED\roR eLSE sOMEONE nEARER a dRAIN"
-      })
-     end, 10})
+   add(choices, {"redpop", {
+      "i\reR\ruH\rwELL",
+      "i tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU",
+      "pERHAPS gAMZEE mIGHT bE mORE INCLINED\roR eLSE sOMEONE nEARER a dRAIN"
+     }, 10})
   end
-  choicer:prompt(choices)
+  t_npc.interact(self, player, choices)
  end
 
  local o_stair = cur_room:add(t_button(vec16(1, 4), false, vec_spritesize*2))
@@ -1985,10 +1979,9 @@ function room_ocean(v)
     sfx(sfx_fishcatch)
     dialoger:enqueue("you caught a fish!")
     dialoger:enqueue("but nothing happened.", {callback=function()
-     player.facing = 'd'
-     t_npc.interact(o_kanaya, player, {"\f3wHAT aRE yOU dOING oVER tHERE\roR dO i nOT wANT tO kNOW\roN cLOSER iNSPECTION iM tHINKING iT iS tHE lATTER"})
-     end})
-    -- todo kanaya bounce
+       player.facing = 'd'
+       t_npc.interact(o_kanaya, player, {"\f3wHAT aRE yOU dOING oVER tHERE\roR dO i nOT wANT tO kNOW\roN cLOSER iNSPECTION iM tHINKING iT iS tHE lATTER"})
+      end})
    end
    self:add(fish)
   end
@@ -2029,7 +2022,7 @@ function room_chess(v)
    spr(self.spr-1, spx, spy+(8*oy))
   end
   spr(self.spr-2, spx, spy+(8*-5))
-  -- mob.drawdebug(self)
+ -- mob.drawdebug(self)
 
  end
 
@@ -2074,12 +2067,12 @@ function room_chess(v)
  end
  function o_promoguy:interact(p)
   local wasfacing = self.facing
-  t_npc.interact(self, p)
+  t_npc.interact(self, p, {
+    "i have to keep at it if i want to get that promotion.",
+    "...what do you mean i'm going the wrong way?"
+   })
   dialoger:enqueue('',{callback=function() self.facing = wasfacing end})
  end
- o_promoguy.lines = {
-  "i have to keep at it if i want to get that promotion.",
-  "...what do you mean i'm going the wrong way?"}
 
  local o_palt_portal = cur_room:add(newportal(vec8(2, 9), room_complab))
  o_palt_portal.paltab = {[1]=7,[2]=10}
@@ -2108,24 +2101,22 @@ function room_chess(v)
  -- todo more dialogue
  function o_jade:interact(player)
   local choices = {
-   {"walkaround", closure(t_npc.interact, self, player, {
-      "yeah, it feels good to wake up and stretch my legs!!",
-      "sometimes it feels like i'm gonna spend my whole life asleep. or awake, but... oh, you know!",
-      "but that's all going to change soon! i think....."
-     })},
-   {"dogs", closure(t_npc.interact, self, player, {
-      "ok yes that's one thing about prospit that suuucks :(",
-      "the people here are all very nice but there's no dogs or animals anywhere",
-      "sure bec can be a bossypants sometimes but i still think these guys are missing out!"
-     })},
+   {"walkaround", {
+     "yeah, it feels good to wake up and stretch my legs!!",
+     "sometimes it feels like i'm gonna spend my whole life asleep. or awake, but... oh, you know!",
+     "but that's all going to change soon! i think....."
+    }},
+   {"dogs", {
+     "ok yes that's one thing about prospit that suuucks :(",
+     "the people here are all very nice but there's no dogs or animals anywhere",
+     "sure bec can be a bossypants sometimes but i still think these guys are missing out!"
+    }},
   }
   -- todo frogs
   if chest_data['tilechest'] then
-   add(choices, {"frog", function()
-      t_npc.interact(self, player, {"TODO JADE FROG"})
-     end, 10})
+   add(choices, {"frog", {"TODO JADE FROG"}, 10})
   end
-  choicer:prompt(choices)
+  t_npc.interact(self, player, choices)
  end
 
  cur_room:add(newtrig(vec8(31.5, 8), vec8(.5, 3), room_ocean, {
@@ -2136,77 +2127,76 @@ function room_chess(v)
 
 end
 
-
 local intro_keyspr = actor:extend{}
 function intro_keyspr:init(btnid, ...)
-  actor.init(self, ...)
-  self.btnid = btnid
-  self.size = vec8(2, 2)
+ actor.init(self, ...)
+ self.btnid = btnid
+ self.size = vec8(2, 2)
 end
 function intro_keyspr:draw()
-  local x0, y0, x1, y1 = bbox(self._apos, self.size):unpack()
-  local c1, c2, c3 = 13, 7, 5
-  if (btn(self.btnid)) c2, c3 = 5, 7
-   rectfill(x0, y0, x1, y1, c1)
-   line(x0, y0, x0, y1-1, c2)
-   line(x0, y0, x1-1, y0, c2)
-   line(x0+1, y1, x1, y1, c3)
-   line(x1, y0+1, x1, y1, c3)
-  -- actor.draw(self)
+ local x0, y0, x1, y1 = bbox(self._apos, self.size):unpack()
+ local c1, c2, c3 = 13, 7, 5
+ if (btn(self.btnid)) c2, c3 = 5, 7
+ rectfill(x0, y0, x1, y1, c1)
+ line(x0, y0, x0, y1-1, c2)
+ line(x0, y0, x1-1, y0, c2)
+ line(x0+1, y1, x1, y1, c3)
+ line(x1, y0+1, x1, y1, c3)
+-- actor.draw(self)
 end
 
 local introscreen = stage:extend{
-  greyscale={0, 0, 1, 5, 13, 6, 7},
-  lines = {"assume the", "position"},
-  held = 0
+ greyscale={0, 0, 1, 5, 13, 6, 7},
+ lines = {"assume the", "position"},
+ held = 0
 }
 function introscreen:init(fadelen, onopen)
-  stage.init(self)
-  self.onopen = onopen
-  self.fadelen = fadelen
+ stage.init(self)
+ self.onopen = onopen
+ self.fadelen = fadelen
 
-  --lrudox
-  for i = 0, 3 do
-    local y = i==2 and -18 or 0
-    local x = i>1 and 18 or 36*i
-    self:add(intro_keyspr(i, vec(72+x, 96+y)))
-  end
+ --lrudox
+ for i = 0, 3 do
+  local y = i==2 and -18 or 0
+  local x = i>1 and 18 or 36*i
+  self:add(intro_keyspr(i, vec(72+x, 96+y)))
+ end
 
-  for i = 4, 5 do
-    self:add(intro_keyspr(i, vec(18*i-68, 96)))
-  end
+ for i = 4, 5 do
+  self:add(intro_keyspr(i, vec(18*i-68, 96)))
+ end
 
-  -- build fadetable
-  self.fadeindex={}
-  for k,v in pairs(self.greyscale) do
-     self.fadeindex[v]=k
-  end
+ -- build fadetable
+ self.fadeindex={}
+ for k,v in pairs(self.greyscale) do
+  self.fadeindex[v]=k
+ end
 
 end
 function introscreen:update()
-  if (band(btn(), 0b111111) > 0) then self.held += 1
-  else self.held = max(self.held -4, 0) end
+ if (band(btn(), 0b111111) > 0) then self.held += 1
+ else self.held = max(self.held -4, 0) end
 
-  if (self.held >= self.fadelen) self.onopen()
+ if (self.held >= self.fadelen) self.onopen()
 
-  stage.update(self)
+ stage.update(self)
 end
 function introscreen:draw()
- 
-  local fadescale = self.fadelen/#self.greyscale
-  for c in all(self.greyscale) do
-    local i = self.fadeindex[c]+flr(self.held/fadescale)
-    pal(c, self.greyscale[i] or 7)
-  end
 
-  rectfill(0,0,128,128, 0)
-  for i, s in ipairs(self.lines) do
-    local x = (128 - (#s * 8)) / 2
-    s = "\^w\^t" .. s
-    print(s, x, 16+(i-1)*14 + 2, 1)
-    print(s, x, 16+(i-1)*14, 7)
-  end
-  stage.draw(self)
+ local fadescale = self.fadelen/#self.greyscale
+ for c in all(self.greyscale) do
+  local i = self.fadeindex[c]+flr(self.held/fadescale)
+  pal(c, self.greyscale[i] or 7)
+ end
+
+ rectfill(0,0,128,128, 0)
+ for i, s in ipairs(self.lines) do
+  local x = (128 - (#s * 8)) / 2
+  s = "\^w\^t" .. s
+  print(s, x, 16+(i-1)*14 + 2, 1)
+  print(s, x, 16+(i-1)*14, 7)
+ end
+ stage.draw(self)
 end
 
 -->8
@@ -2224,28 +2214,28 @@ function _init()
  --  ocean=room_ocean,
  --  chess=room_chess
  -- }
- -- if debug then
+ if debug then
  --  menuitem(5,'toggle debug',function() debug = not debug end)
 
- --  menuitem(1,'progress',function()
- --    state_flags['holefilled'] = true
- --    chest_data['limoncello'] = true
- --    chest_data['clabdollar'] = true
- --    chest_data['clabfaygo'] = true
- --    chest_data['sciencetank'] = true
- --   end)
- -- end
+ menuitem(1,'progress',function()
+   state_flags['holefilled'] = true
+   chest_data['limoncello'] = true
+   chest_data['clabdollar'] = true
+   chest_data['clabfaygo'] = true
+   chest_data['sciencetank'] = true
+  end)
+ end
 
  prettify_map()
  -- starting room
  if (debug) then
   room_ocean()
   focus:push'player'
- else 
- cur_room = introscreen(90, function()
-  room_complab()
-  focus:push'player'
- end)
+ else
+  cur_room = introscreen(90, function()
+    room_complab()
+    focus:push'player'
+   end)
  end
 end
 
@@ -2385,6 +2375,7 @@ ff2222222222fffffff2222222222ffffffff222222fffffffffffffffffffffeeeeeeeeeeeeeeee
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffff00000ffffff
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffff00000ffffff
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffff2222222fffff
+
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -2435,3 +2426,120 @@ __sfx__
 011d00000f150001000f150001000e1500010000100001000f1500010011150001000010013150111500f1500e1500010000100001000c1500010007150001000010000100000000000000000000000000000000
 013300000f5550f5550e555000000f5551155513551115550f5550e555000000c55507555000000655500000055550000006555000000f555185551255500000185551a555000001f5551d5551b5551a55500000
 011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__music__
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+00 41424344
+
