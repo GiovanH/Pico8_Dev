@@ -1397,65 +1397,54 @@ function room_complab()
  cur_room = room("complab", 0, 0, 2, 2)
  o_player = cur_room:add(t_player(center))
 
- o_computer1 = t_sign(vec16(1.5, 0.5), 010, vec_16_16)
+ local o_computer1 = cur_room:add(t_sign(vec16(1.5, 0.5), 010, vec_16_16))
  o_computer1.lines = {
   "two white lines of text are blown up to fill the entire screen.\rit's so huge you can read it from across the room.\ri wonder what it says."
  }
- cur_room:add(o_computer1)
 
- o_computer2 = t_sign(vec8(11, 1), 112, vec8(2, 1), {bsize=vec_16_16})
+ local o_computer2 = cur_room:add(t_sign(vec8(11, 1), 112, vec8(2, 1), {bsize=vec_16_16}))
  o_computer2.lines = {
   "looks like someone was planning a fundraising campaign for a video game.\rtoo bad they're just a troll."
  }
- cur_room:add(o_computer2)
 
- o_computer3 = t_sign(vec8(19, 1), 116, vec_spritesize, {
-   anchor=vec(4, 1), bsize=vec_16_16})
+ local o_computer3 = cur_room:add(t_sign(vec8(19, 1), 116, vec_spritesize, {
+   anchor=vec(4, 1), bsize=vec_16_16}))
  o_computer3.lines = {"it's an off-ice computer.\ryou can tell because someone is running troll powerpoint. it ticked past the last slide though."}
  o_computer3.tcol = 15
- cur_room:add(o_computer3)
 
- o_computer4 = t_sign(vec8(27, 1), 010, vec8(2, 1), {
-   bsize=vec_16_16})
+ local o_computer4 = cur_room:add(t_sign(vec8(27, 1), 010, vec8(2, 1), {
+   bsize=vec_16_16}))
  o_computer4.paltab = {[6]=3}
  o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally. \rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
  }
  -- o_computer4:addline(
  --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
- cur_room:add(o_computer4)
 
- o_teapot = t_sign(vec16(15, 8), 050, vec8(2, 1))
+ local o_teapot = cur_room:add(t_sign(vec16(15, 8), 050, vec8(2, 1)))
  o_teapot.tcol = 012
  o_teapot.lines = {"it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.\rthe sugar is arranged so as to be copyrightable intellectual property."}
- cur_room:add(o_teapot)
 
- o_chest = t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone)
+ local o_chest = cur_room:add(t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone))
  o_chest.getlines = {
   "you got a fistfull of boondollars!\rit's important that sburb give these out to players for accomplishing game tasks, or else they wouldn't be motivated to play the game.\ralthough \"playing the game\" here pretty much means staying alive and ensuring you're not responsible for the annihilation of your species. you've gotta give people little wins."}
- cur_room:add(o_chest)
 
  -- todo polish dialogue
- o_chest = t_chest('clabfaygo',vec8(25, 20), 043, vec(1, 2))
+ local o_chest = cur_room:add(t_chest('clabfaygo',vec8(25, 20), 043, vec(1, 2)))
  o_chest.getlines = {
   "you got a faygo! a fun drink for fun people.\rit tastes like red pop."
  }
- cur_room:add(o_chest)
 
- o_p8cart = t_sign(vec8(1, 12), 183, vec_spritesize)
+ local o_p8cart = cur_room:add(t_sign(vec8(1, 12), 183, vec_spritesize))
  o_p8cart.lines = {"it's a pico-8 game cartridge. these things have a maximum capacity of about 90% the size of just the first animated panel of mspa, so programming one is quite the challenge.\rchallenge here meaning royal headache.\rbut sometimes you've got to take off your archivist's stovetop hat and toil for a minute\runder the pulled-back baseball cap of the secrets' sommelier.\ryou think you'll stick with godot instead."}
- cur_room:add(o_p8cart)
 
- o_cards = t_sign(vec(184, 194), 034, vec8(2, 1))
+ local o_cards = cur_room:add(t_sign(vec(184, 194), 034, vec8(2, 1)))
  o_cards.lines = {"these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."}
- cur_room:add(o_cards)
 
- o_plush = t_sign(vec(142, 203), 032, vec_spritesize*2)
+ local o_plush = cur_room:add(t_sign(vec(142, 203), 032, vec_spritesize*2))
  o_plush.lines = {
   "it's a stray fiduspawn host plush.\ronce hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."}
- cur_room:add(o_plush)
 
-
- o_trash = cur_room:add(t_sign(vec8(27, 28), 237, vec8(1, 2), {
+ local o_trash = cur_room:add(t_sign(vec8(27, 28), 237, vec8(1, 2), {
   bsize=vec_spritesize,
   anchor=vec8(0,-1)
   }))
@@ -1505,9 +1494,9 @@ function room_t(v)
  o_chest.getlines = {"you got another scalemate!\rthere was also a rope in the chest. you decide to leave it and take the scalemate far away." }
  o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
 
- o_scalehang = actor(vec16(5, 3), 142, vec_16_16, {
+ o_scalehang = cur_room:add(actor(vec16(5, 3), 142, vec_16_16, {
    anchor = vec8(0,-4)
-  })
+  }))
  o_scalehang.tcol = 15
  o_scalehang.paltab = {[3]=2, [11]=8,[12]=11}
  function o_scalehang:draw()
@@ -1515,10 +1504,9 @@ function room_t(v)
   line(spx, spy, spx, spy-32, 7)
   mob.draw(self)
  end
- cur_room:add(o_scalehang)
 
  -- todo write dialogue
- o_terezi = t_npc(vec8(8, 7), 128)
+ o_terezi = cur_room:add(t_npc(vec8(8, 7), 128))
  o_terezi.color = 3
  function o_terezi:interact(player)
   local choices = {
@@ -1533,7 +1521,6 @@ function room_t(v)
   end
   t_npc.interact(self, player, choices)
  end
- cur_room:add(o_terezi)
 
  cur_room:add(newportal(vec(24, 90), room_complab))
  cur_room:add(newportal(vec(104, 90), room_lab))
@@ -1556,7 +1543,7 @@ function room_lab(v)
   end
  end
 
- o_switch_dial = t_sign(vec8(7.5, 2.5), 125, vec_spritesize)
+ o_switch_dial = cur_room:add(t_sign(vec8(7.5, 2.5), 125, vec_spritesize))
  o_switch_dial.flipx = state_flags['frog_flipped']
  function o_switch_dial:interact(player)
   if (player.cooldown > 0) return false
@@ -1576,10 +1563,8 @@ function room_lab(v)
   dialoger:enqueue("there is a switch here with a frog. flip it?", {callback=promptswitch}
   )
  end
- cur_room:add(o_switch_dial)
- o_switch_frog = mob(vec8(7, 1.5), 126, vec8(2, 1))
- cur_room:add(o_switch_frog)
-
+ o_switch_frog = cur_room:add(mob(vec8(7, 1.5), 126, vec8(2, 1)))
+ 
  o_frog = t_sign(vec8(12, 4), 174, vec_16_16, {
    bsize=vec8(2, 1),
    anchor=vec8(0,-1)
@@ -1605,11 +1590,10 @@ function room_lab(v)
  end
  if (state_flags['frog_flipped']) cur_room:add(o_frog)
 
- o_chest = t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10)
+ o_chest = cur_room:add(t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10))
  o_chest.getlines = {
   "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.\rno matter what your genre, if you've got something significant to do and really want to make it official, you've gotta have a room full of these bad boys around."}
  o_chest.emptylines = {"someone has carved a hole into the floor to give this chest space for an extra-tall item."}
- cur_room:add(o_chest)
 
  cur_room:add(newportal(vec(64, 84), room_t, {
     facing='d',
@@ -1625,7 +1609,7 @@ function room_hallway(v)
  cur_room = room("hallway", 2, 1, 1, 1)
  o_player = cur_room:add(t_player(v or vec(14, 72)))
 
- greydoor = t_sign(vec8(7, 4), 030, vec8(2, 3))
+ local greydoor = cur_room:add(t_sign(vec8(7, 4), 030, vec8(2, 3)))
  function greydoor:interact(player)
   if self.talkedto < 1 then
    self.lines = {
@@ -1636,7 +1620,6 @@ function room_hallway(v)
   end
   t_sign.interact(self, player)
  end
- cur_room:add(greydoor)
 
  cur_room:add(newtrig(vec(0, 56), vec8(.5, 4), room_lab, {
     facing='l',
