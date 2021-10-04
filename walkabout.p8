@@ -693,13 +693,8 @@ local dialoger = entity:extend{
   self.current_line_in_table = 1
   self.current_line_count = 1
   self.pause_dialog = false
-  if (#message>0) then
-   self:format_message(message)
-   -- smooth out callback-only messages
-   self.lastbgcolor = self.bgcolor
-  else
-   self.bgcolor = self.lastbgcolor
-  end
+  self.no_text = (#message == 0)
+  self:format_message(message)
   self.animation_loop = nil
   self.animation_loop = cocreate(self.animate_text)
  end,
@@ -740,6 +735,7 @@ local dialoger = entity:extend{
  end,
  animate_text = function(self)
   --> sets self.current_message to partially/fully displayed text
+  -- ends when message is fully displayed (plus extra frames if autoplay is true)
   -- for each line, write it out letter by letter
   -- if we each the max lines, pause the coroutine
   -- wait for input in update before proceeding
@@ -764,9 +760,7 @@ local dialoger = entity:extend{
    end
   end
 
-  if (self.opts.autoplay) then
-   self.yieldn(30)
-  end
+  if (self.opts.autoplay) self.yieldn(30)
  end,
  shift = function (t)
   local n=#t
@@ -785,6 +779,7 @@ local dialoger = entity:extend{
     coresume(self.animation_loop, self)
    else
     if btnp(4) then
+     -- 
      self.pause_dialog = false
      self.current_line_count = 1
      self.current_message = self.opts.prefix or ''
@@ -816,6 +811,7 @@ local dialoger = entity:extend{
  end,
  drawui = function(self)
   if (focus:isnt'dialog') return
+  if (self.no_text) return
   local screen_width = 128
 
   -- display message
