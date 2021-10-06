@@ -14,7 +14,7 @@ __lua__
 
 -- global vars
 local o_player
-local debug = false  -- (stat(6) == 'debug')
+local debug = true  -- (stat(6) == 'debug')
 
 -- game state flags
 local speedshoes = debug
@@ -33,7 +33,7 @@ local sfx_itemget = 003
 local sfx_curmove = 004
 local sfx_wink = 005
 local sfx_blip2 = 006
-local sfx_fishcatch = 007
+-- local sfx_fishcatch = 007
 local sfx_footstep = 008
 
 -->8
@@ -46,8 +46,8 @@ function tostring(any, depth)
  if (any.__tostring) return any:__tostring()
  local str = "{"
  for k,v in pairs(any) do
-  if (str~="{") str=str..","
-  str=str..tostring(k, nextdepth).."="..tostring(v, nextdepth)
+  if (str~="{") str ..= ","
+  str ..= tostring(k, nextdepth).."="..tostring(v, nextdepth)
  end
  return str.."}"
 end
@@ -56,7 +56,7 @@ end
 function printa(...)
  local args={...}  -- becomes a table of arguments
  s = ""
- foreach(args, function(a) s = s..','..tostring(a) end)
+ foreach(args, function(a) s ..= ','..tostring(a) end)
  printh(s)
 end
 
@@ -116,6 +116,13 @@ function sort(list, keyfunc)
  end
 end
 
+function sorted(list, keyfunc)
+  local temp = {unpack(list)}
+  sort(temp, keyfunc)
+  return temp
+end
+
+
 -- clamp query between min/max
 function clamp(min_, query, max_)
  return min(max_, max(min_, query))
@@ -172,10 +179,12 @@ function vec8(x, y) return vec(x, y)*8 end
 local vec_spritesize = vec(8, 8)
 local vec_16_16 = vec(16, 16)
 local vec_oneone = vec(1, 1)
+local vec_twotwo = vec(2, 2)
 local vec_zero = vec(0, 0)
 local vec_x1 = vec(1, 0)
 local vec_y1 = vec(0, 1)
 local vec_noneone = vec(-1,-1)
+-- vec\d*\(.+?\)
 -- function vec:clone() return vec(self:unpack()) end
 -- function vec:flip() return vec(self.y, self.x) end
 function vec:floor() return vec(flr(self.x), flr(self.y)) end
@@ -195,6 +204,7 @@ function vec:dotp(v, y)
  if (y) v = vec(v, y)
  return vec(self.x * v.x, self.y * v.y)
 end
+function vec:mag() return sqrt(self.x^2 + self.y^2) end
 
 -- 2d bounding box
 -- self ops: clone, unpack, center (get)
@@ -1251,9 +1261,13 @@ function t_player:tryinteract()
  -- try interact
  local facemap = {d=vec(0, 6),u=vec(0,-12),l=vec(-12,-6),r=vec(12,-6)}
  if btnp(4) then
-  self.ibox = bbox(self.hbox.origin, vec(12, 12)):shift(facemap[self.facing])
-  for _,obj in pairs(self.stage.objects) do
-   if (self.ibox:overlaps(obj.hbox) and obj.interact) then
+  local ibox = bbox(self.hbox.origin, vec(12, 12)):shift(facemap[self.facing])
+  
+  function p_dist(object)
+    return (not object.pos) and 0 or self.pos:__sub(object.pos):mag()
+  end
+  for _,obj in pairs(sorted(self.stage.objects, p_dist)) do
+   if (ibox:overlaps(obj.hbox) and obj.interact) then
     if (obj:interact(self) != false) then
      self.cooldown += 2
      break
@@ -1261,7 +1275,7 @@ function t_player:tryinteract()
    end
   end
  else
-  self.ibox = nil
+  ibox = nil
  end
 end
 function t_player:update()
@@ -1485,7 +1499,7 @@ function room_t(v)
  o_player = cur_room:add(t_player(v or vec8(3, 12)))
 
  o_chest = cur_room:add(
-  t_chest('scalemate',vec8(5, 5), 142, vec(2, 2), 15)
+  t_chest('scalemate',vec8(5, 5), 142, vec_twotwo, 15)
  )
  o_chest.getlines = {"you got another scalemate!\rthere was also a rope in the chest. you decide to leave it and take the scalemate far away." }
  o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
@@ -1641,11 +1655,11 @@ function room_stair(v)
  local o_plush = cur_room:add(t_sign(vec(80, 141), 032, vec_spritesize*2))
  o_plush.lines = {"he must be lost.\rfortunately his owner can safely walk down here and retrieve him."}
 
- local o_chest = cur_room:add(t_chest('stair1',vec16(5, 2), 003, vec(2, 2)))
+ local o_chest = cur_room:add(t_chest('stair1',vec16(5, 2), 003, vec_twotwo))
  o_chest.getlines = {"you got a chest! the perfect container to store things in.","since only protagonists can open them, it's very secure."}
  o_chest.emptylines = {"it was only big enough to hold one chest."}
 
- local o_chest2 = cur_room:add(t_chest('stair2',vec16(2, 2), 206, vec(2, 2), 12))
+ local o_chest2 = cur_room:add(t_chest('stair2',vec16(2, 2), 206, vec_twotwo, 12))
  o_chest2.getlines = {
   "you got minihoof!\rsmall enough to sit on your desk, horse enough to be entirely inconvenient to care for.\rtotally worth it though."
  }
@@ -1742,7 +1756,7 @@ function room_turbine(v)
  o_great.draw = drawgreat
 
  if (not state_flags['frog_flipped']) then
-  local o_chest = cur_room:add(t_chest('frog',vec8(20, 11), 174, vec(2, 2)))
+  local o_chest = cur_room:add(t_chest('frog',vec8(20, 11), 174, vec_twotwo))
   o_chest.getlines = {"you found a contraband amphibian!\rhe says something about being hidden better than the other frog.\ryou pet the frog."
   }
   o_chest.emptylines = {"you have left this chest so much the poorer."}
@@ -1835,16 +1849,17 @@ function room_roof(v)
  music(01)
  cur_room = room("john's roof", 5, 0, 1, 1)
  o_player = cur_room:add(t_player(v or vec(16, 98)))
+ o_player.facing = 'r'
 
  local o_stair_rail = cur_room:add(mob(vec(77, 48), nil, vec(3, 64)))
  o_stair_rail.obstructs = true
 
- local o_chest = cur_room:add(t_chest('pogo',vec8(7, 6), 078, vec(2, 2)))
+ local o_chest = cur_room:add(t_chest('pogo',vec8(7, 6), 078, vec_twotwo))
  o_chest.paltab = paltab_prospitchest
  o_chest.ipaltab = {[11]=12, [0]=6}
  o_chest.itcol = 3
  o_chest.getlines = {
-  "you got a rare off-color slimer!\rman, they don't make 'em like this anymore."
+  "you got a rare off-color slimer!\ran artifact of a simpler time."
  }
 
  local o_chest = cur_room:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone))
@@ -1878,7 +1893,7 @@ function room_roof(v)
  o_lamppost.obstructs = true
  o_lamppost.tcol = 14
  o_lamppost.lines = {
-  function() sfx(sfx_fishcatch) end,
+  function() sfx(007) end,
   "it's the \falamppost\f7.\rquit the game?",
   function()
    choicer:prompt{
@@ -1968,7 +1983,7 @@ function room_ocean(v)
     particle.update(self)
    end
    function fish:interact(player)
-    sfx(sfx_fishcatch)
+    sfx(007)
     dialoger:enqueue"you caught a fish!"
     dialoger:enqueue("but nothing happened.", {callback=function()
        player.facing = 'd'
@@ -2031,17 +2046,13 @@ function room_chess(v)
  local o_stalemate_w = cur_room:add(t_sign(vec8(7, 12), 066, vec8(2, 3)))
  npcify(o_stalemate_w)
  o_stalemate_w.lines = {
-  "it's a north-going prospitian.\rit looks like they're stuck."}
+  "it's a north-going prospitian.\rit looks like they're stuck.\rthey look enraged."}
 
  local o_stalemate_b = cur_room:add(t_sign(vec8(7, 11), 064, vec8(2, 3)))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab=paltab_dersite
  o_stalemate_b.lines = {
-  "it's a south-going dersite.\rit looks like they're stuck."}
- function o_stalemate_b:interact(p)
-  if (p.pos.y > 96) return false
-  t_sign.interact(self, p)
- end
+  "it's a south-going dersite.\rit looks like they're stuck.\rseems they've accepted it."}
 
  local o_promoguy = cur_room:add(t_npc(vec8(12.5, 7), 064))
  o_promoguy.step = vec_x1
@@ -2068,13 +2079,13 @@ function room_chess(v)
  local o_palt_portal = cur_room:add(newportal(vec8(2, 9), room_complab))
  o_palt_portal.paltab = {[1]=7,[2]=10}
 
- local o_chest_tile = cur_room:add(t_chest('tilechest',vec8(5, 5), 008, vec(2, 2)))
+ local o_chest_tile = cur_room:add(t_chest('tilechest',vec8(5, 5), 008, vec_twotwo))
  o_chest_tile.paltab = paltab_prospitchest
  o_chest_tile.getlines = {
   "you found a floor tile!\ryou are filled with relief at some semblance of linear progression."
  }
 
- local o_chest_nendroid = cur_room:add(t_chest('nendroid',vec8(8, 5), 238, vec(2, 2)))
+ local o_chest_nendroid = cur_room:add(t_chest('nendroid',vec8(8, 5), 238, vec_twotwo))
  o_chest_nendroid.paltab = paltab_prospitchest
  o_chest_nendroid.itcol = 15
  o_chest_nendroid.getlines = {
@@ -2105,6 +2116,7 @@ function room_chess(v)
     }},
   }
   -- todo frogs
+  -- frogs: cute? temple? visions?
   if chest_data['tilechest'] then
    add(choices, {"frogs", {"TODO JADE FROG"}, 10})
   end
@@ -2221,7 +2233,8 @@ function _init()
  prettify_map()
  -- starting room
  if (debug) then
-  room_complab()
+  room_chess()
+  printa(focus)
   focus:push'player'
  else
   cur_room = introscreen(90, function()
@@ -2251,27 +2264,27 @@ ccddeeff00000000eeeeeeee1111111911111111fff111122222222221111fff05dddddddd555ddd
 0011111133333333666666669a555199a555519a11111111eee01eeeeee05eee055dddddddd555d6015555555555551051111115151515151111111111111111
 0011111133333333666666669a5551115555519a11111111e000001eeee05eee0d55dddddddd555d011111111111111051111115151515151111111111111111
 2255ddff3b333333666666669a5555555555519a11111d1100000001ee0000ee0dd55dddddddd55d500000000000000051111115151515156666666666666666
-2255ddff33b3b333666666669a5555555555519a1111cd11e0deee0eee0000ee0ddd555ddddddddd111011155511011051111115151515156777777777777776
-2299aa3333333333666666669a5555555555519a11cdd1d1e0da9e0ee000050e05ddd55ddddddddd100000000000000051111115151515156766666666666676
-2299aa333333333b666666669a5555555555519addd11111e0daae0eee0000ee055ddd55dddddddd06565566666565605111111515151515676dddddddddd676
-3355eeee3333b3b3666666669a5555555555519a11111111ee0000eee000050e0d55ddd55ddddddd01111155555111105111111515151515676d66666666d676
-3355eeee33333333666666669a5555555555519a11111111eee05eeee000050e0dd55ddddddddd6510000000000000005111111515151515676d6dddddd6d676
-0000044444440000000001dddd000000eeeeeeee666666666666666677777777500000000000000000000000000000005111111515151515676d6d6dd6d6d676
-0000488887884000000001d8dd000000e222222e6ccccccc666666667777777705555555555555555555555d00077000511111151515151d676d6d6dd6d6d676
-000048484848890000d001dddd0ddd00e222002e6ccccccc6666666677777777511111111111111111111115000ff00051111115151515dd676d6d6dd6d6d676
-000048898777aa400ddd0111111d8d50e222222e6ccccccc666666667777777751111111111111111111111500f28f00d555555d15151ddd676d6d6dd646d676
-0004848878787aa9dd8dd000001ddd55e222222e6ccccccc66666666777777775111111111111111111111150f2888f05ddd55dd1515dddd676d6d6dd464d676
-0048889878477aa41ddddd00001ddd50e200222e6ccccccc66666666777777775111111111111111111111150f9aaaf055ddd55d151ddddd676d6d6dd747d676
-4484848487887a7a01ddd100001ddd00e222222e6ccccccc66666666777777775111111111111111111111150f2888f00000000015dddddd676d6d6dd767d676
-48889888aa77aaa4001d100000115000eeeeeeee6ccccccc66666666777777775111111111111111111111150f7877f0000000001ddddddd676d6d6dd676d676
-4484848aaaaaaaa9cccccccccccccccc0000000055555555666666667777766705500000000000000000056d0f7788700cccc000dddddddd676d6d6dd6d6d676
-004888aaaaaaaaa4c77cccccc00ccccc000000005555555577677767777776670d51111111111111111115dd06288af0c9beac00dddddddd676d6d6dd6d6d676
-00048aaaaaaaafa9c77cccc00000cccc000000005555555577677767777776670d51111111111111111115dd0f2aa8f0cbebbc00dddddddd676d6d6dd6d6d676
-00009aaaaaaf4a4077cc0c0fffff0c0c000000005555555577677767777776670dd555555555555555555ddd0f2888f0cebbec00dddddddd676d6d6dd6d6d676
-000004aaaaa9000077cc00f0f0fff0c00000000055555555776777677777766705ddd5555ddd55dddddddddd0f2228f0cabe9c20dddddddd676d6dddddd6d676
-0000009aaf400000c77cc0f000fff0c000000000555555557767776777777667055ddd5555ddd55ddddddddd022002200cccc889dddddddd676d66666666d676
-00000004a9000000c77ccc0f0fff0c0c000000005555555566666666777776670d5dddd555dddd555ddddddd0000000000002884dddddddd776dddddddddd677
-0000000a4a000000ccccccc00000cccc000000005555555577777777777776670dd55ddd5555dddddddddd6500000000000002e0dddddddd6676666666666766
+2255ddff33b3b333666666669a5555555555519a1111cd11e0deee0eee0000ee0ddd555ddddddd5d1110111555110110511111151515151566dddddddddddd66
+2299aa3333333333666666669a5555555555519a11cdd1d1e0da9e0ee000050e05ddd55ddddddddd100000000000000051111115151515156d555555555555d6
+2299aa333333333b666666669a5555555555519addd11111e0daae0eee0000ee055ddd55dddddddd065655666665656051111115151515156d5dddddddddd5d6
+3355eeee3333b3b3666666669a5555555555519a11111111ee0000eee000050e0d55ddd55ddddddd011111555551111051111115151515156d5dd555555dd5d6
+3355eeee33333333666666669a5555555555519a11111111eee05eeee000050e0dd55ddddddddd65100000000000000051111115151515156d5d5dd55dd5d5d6
+0000044444440000000001dddd000000eeeeeeee6666666666666666777777775000000000000000000000000000000051111115151515156d5d5dd55dd5d5d6
+0000488887884000000001d8dd000000e222222e6ccccccc666666667777777705555555555555555555555d00077000511111151515151d6d5d5dd55dd5d5d6
+000048484848890000d001dddd0ddd00e222002e6ccccccc6666666677777777511111111111111111111115000ff00051111115151515dd6d5d5dd55dd5d5d6
+000048898777aa400ddd0111111d8d50e222222e6ccccccc666666667777777751111111111111111111111500f28f00d555555d15151ddd6d5d5dd55dd5d5d6
+0004848878787aa9dd8dd000001ddd55e222222e6ccccccc66666666777777775111111111111111111111150f2888f05ddd55dd1515dddd6d5d5dd55dd4d5d6
+0048889878477aa41ddddd00001ddd50e200222e6ccccccc66666666777777775111111111111111111111150f9aaaf055ddd55d151ddddd6d5d5dd55d4645d6
+4484848487887a7a01ddd100001ddd00e222222e6ccccccc66666666777777775111111111111111111111150f2888f00000000015dddddd6d5d5dd55d6465d6
+48889888aa77aaa4001d100000115000eeeeeeee6ccccccc66666666777777775111111111111111111111150f7877f0000000001ddddddd6d5d5dd55d6565d6
+4484848aaaaaaaa9cccccccccccccccc0000000055555555666666667777766705500000000000000000056d0f7788700cccc000dddddddd6d5d5dd55dd6d5d6
+004888aaaaaaaaa4c77cccccc00ccccc000000005555555577677767777776670d51111111111111111115dd06288af0c9beac00dddddddd6d5d5dd55dd5d5d6
+00048aaaaaaaafa9c77cccc00000cccc000000005555555577677767777776670d51111111111111111115dd0f2aa8f0cbebbc00dddddddd6d5d5dd55dd5d5d6
+00009aaaaaaf4a4077cc0c0fffff0c0c000000005555555577677767777776670dd555555555555555555ddd0f2888f0cebbec00dddddddd6d5d5dd55dd5d5d6
+000004aaaaa9000077cc00f0f0fff0c00000000055555555776777677777766705ddd5555ddd55dddddddddd0f2228f0cabe9c20dddddddd6d5d5dd55dd5d5d6
+0000009aaf400000c77cc0f000fff0c000000000555555557767776777777667055ddd5555ddd55ddddddddd022002200cccc889dddddddd6d5d55555dd5d5d6
+00000004a9000000c77ccc0f0fff0c0c000000005555555566666666777776670d5dddd555dddd555ddddddd0000000000002884dddddddddd5dd555555dd5dd
+0000000a4a000000ccccccc00000cccc000000005555555577777777777776670dd55ddd5555dddddddddd6500000000000002e0dddddddd66d5555555555d66
 fffffffffffffffffffffffffffffffffffffffffffffffffffff1fffffffffffffff1fffffffffffffffff1ffffffffaaaa11111111aaaa3333333333333333
 ffffffffffffffffffffffffffffffffffffffffffffffffffff11f111111fffffff111111111fffffffff11f11111ffaa111111111111aa3333333331111333
 ffffffffffffffffffffffffffffffffffffffffffffffffff1111111111fffffff11111111111ffffff1111111111ffa11111111111111a333333331bbbb133
@@ -2416,7 +2429,7 @@ __sfx__
 010a00001d83000e001b8300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 011e00001890518905289451c9550090000900289451c9550090500905289451c9551890518905289451c9551890518905289451c9551890518905289451c9551890518905289451c9551890518905289451c955
 191e00000e050000000e035000000d050000000d03500000100500000010035000000e050000000e0350000009050000000903500000080500000008035000000705000000070350000008050000000803500000
-593c001818540245401f540165401d540165401b540225401b540035400f5401f5401d540185401d5401b540165401b54016540115401d5401f5400e5401d5400050000500005000050000500005000050000500
+593c180018540245401f540165401d540165401b540225401b540035400f5401f5401d540185401d5401b540165401b54016540115401d5401f5400e5401d5400050000500005000050000500005000050000500
 011e000013155001051a1550010518155001051a1550010516155001051a1553010515155001051a155001050f15500105181550010516155001051815500105151550010511155001051b155001050e15500105
 011e00001f7221f7221f7221f7221f7221f7221f7221f7221f7221f7221f7221f7221f7221f7221f7221f7221b7221b7221b7221b7221b7221b7221b7221b7222172221722217222172221722217221d7221d722
 011e00001f553180321c0321f03216552160321d0321603211552110321d0322103213552130321a0321f03218552180321c0321f03216552160321d0322203215552150321d03221032135521a0322303224032
@@ -2424,8 +2437,9 @@ __sfx__
 911e18001f73021730007001f73021730007001d7301f730007001d7301a730007001f73021730007001f73021730007001f73022730007001f73021730007000070000700007000070000700007000070000700
 491e00001555000500215501555012550005001e550125501755000500235501755010550005001c550105500d55000500195500d55012550005001e5501255017550175532355017550105500e5500d55217550
 050f002000600006000c625006000c6250c620006050060500605006050c625006050c6250c620006050060500605006050c625006050c6250c620006050060500605006050c625006050c6200c6250060500605
+492d18000c1520e1500f150061520e1500f1500c1520e1500f15006152121500e1500c1520e1500f150061520e1500f1500c1520e1500f15006152121501a1500010000100001000010000100001000010000100
 __music__
-03 0a094344
+03 13494344
 03 0b494344
 03 0c0d4344
 03 100f4344

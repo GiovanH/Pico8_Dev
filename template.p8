@@ -19,8 +19,8 @@ function tostring(any, depth)
  if (any.__tostring) return any:__tostring()
  local str = "{"
  for k,v in pairs(any) do
-  if (str~="{") str=str..","
-  str=str..tostring(k, nextdepth).."="..tostring(v, nextdepth)
+  if (str~="{") str ..= ","
+  str ..= tostring(k, nextdepth).."="..tostring(v, nextdepth)
  end
  return str.."}"
 end
@@ -29,7 +29,7 @@ end
 function printa(...)
  local args={...}  -- becomes a table of arguments
  s = ""
- foreach(args, function(a) s = s..','..tostring(a) end)
+ foreach(args, function(a) s ..= ','..tostring(a) end)
  printh(s)
 end
 
@@ -87,6 +87,12 @@ function sort(list, keyfunc)
    end
   end
  end
+end
+
+function sorted(list, keyfunc)
+  local temp = {unpack(list)}
+  sort(temp, keyfunc)
+  return temp
 end
 
 -- clamp query between min/max
@@ -168,6 +174,7 @@ function vec:dotp(v, y)
  if (y) v = vec(v, y)
  return vec(self.x * v.x, self.y * v.y)
 end
+function vec:mag() return sqrt(self.x^2 + self.y^2) end
 
 -- 2d bounding box
 -- self ops: clone, unpack, center (get)
