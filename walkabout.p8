@@ -24,17 +24,17 @@ local chest_data = {}
 local state_flags = {}
 
 -- defined sprite flags
-local flag_walkable = 0b1
+-- local flag_walkable = 0b1
 
-local sfx_blip = 000
-local sfx_teleport = 001
-local sfx_creak = 002
-local sfx_itemget = 003
-local sfx_curmove = 004
-local sfx_wink = 005
-local sfx_blip2 = 006
+-- local sfx_blip = 000
+-- local sfx_teleport = 001
+-- local sfx_creak = 002
+-- local sfx_itemget = 003
+-- local sfx_curmove = 004
+-- local sfx_wink = 005
+-- local sfx_blip2 = 006
 -- local sfx_fishcatch = 007
-local sfx_footstep = 008
+-- local sfx_footstep = 008
 
 -->8
 -- utility
@@ -395,14 +395,14 @@ function mob:update()
  actor.update(self)
  if (self.dynamic) self.hbox = self:get_hitbox()
 end
-function mob:drawdebug()
- if debug then
-  -- print bbox and anchor/origin WITHIN box
-  local drawbox = self.hbox:grow(vec_noneone)
-  rect(mrconcatu(drawbox, 2))
-  actor.drawdebug(self)
- end
-end
+-- function mob:drawdebug()
+--  if debug then
+--   -- print bbox and anchor/origin WITHIN box
+--   local drawbox = self.hbox:grow(vec_noneone)
+--   rect(mrconcatu(drawbox, 2))
+--   actor.drawdebug(self)
+--  end
+-- end
 
 -- particle
 -- pos, vel, acc, ttl, col, z
@@ -756,7 +756,7 @@ local dialoger = entity:extend{
     -- press btn 5 to skip to the end of the current passage
     -- otherwise, print 1 character per frame
     -- with sfx about every 5 frames
-    if (i % 5 == 0) sfx(self.opts.blip or sfx_blip)
+    if (i % 5 == 0) sfx(self.opts.blip or 000)
     if not btnp(5) then
      yield()
     end
@@ -901,8 +901,8 @@ local choicer = entity:extend{
   if (focus:isnt'choice') return
   if (self.buttoncool > 0) self.buttoncool -= 1;    return
 
-  if (btnp(2)) self.selected -= 1; sfx(sfx_curmove)
-  if (btnp(3)) self.selected += 1; sfx(sfx_curmove)
+  if (btnp(2)) self.selected -= 1; sfx(004)
+  if (btnp(3)) self.selected += 1; sfx(004)
   self.selected = clamp(1, self.selected, #self.choices)
   if (btnp(4)) then
    focus:pop'choice'
@@ -950,7 +950,7 @@ end
 
 local t_sign = mob:extend{
  lines = nil,
- blip = sfx_blip,
+ blip = 000,
  talkedto = 0,
  istalking = false
 }
@@ -990,7 +990,7 @@ end
 function t_chest:interact(player)
  if not chest_data[self.id] then
   chest_data[self.id] = true
-  sfx(sfx_itemget)
+  sfx(003)
   self.ihold = 0xff
   self.ttl = 0x0f + self.ihold
   focus:push'anim'
@@ -1139,7 +1139,7 @@ function newportal(pos, dest, deststate)
   if p.hbox:overlaps(self.hbox) then
    self:spark()
    p:destroy()
-   sfx(sfx_teleport)
+   sfx(001)
    self.stage:schedule(16, function()
      -- new room after animation
      if deststate then
@@ -1198,7 +1198,7 @@ function t_player:_moveif(step, facing)
  local unobstructed = nhbox:within(self.stage.box_px)
  local tiles = nhbox:maptiles(self.stage.map_origin)
  for tile in all(tiles) do
-  if band(tile.flags, flag_walkable) == 0 then
+  if band(tile.flags, 0b1) == 0 then
    unobstructed = false
    break
   end
@@ -1288,7 +1288,7 @@ function t_player:update()
   self:tryinteract()
  end
 
- if (self.ismoving and (self.stage.mclock % 10 == 0)) sfx(sfx_footstep)
+ if (self.ismoving and (self.stage.mclock % 10 == 0)) sfx(008)
 
  self.stage.camfocus = self.pos
  mob.update(self)
@@ -1551,7 +1551,7 @@ function room_lab(v)
     {"flip it", function()
       state_flags['frog_flipped'] = not state_flags['frog_flipped']
       self.flipx = state_flags.frog_flipped
-      sfx(sfx_creak)
+      sfx(002)
       player.cooldown += 2
      end},
     {"do not", function()
@@ -1689,7 +1689,7 @@ function room_stair(v)
           focus:push'anim'
           self.facing = 'd'
           cur_room:schedule(10, function()
-            sfx(sfx_wink)
+            sfx(005)
             local face = cur_room:add(sprparticle(
               179, vec_oneone,
               self._apos:__add(4, 7),  -- get this while standing still
@@ -1777,7 +1777,7 @@ function room_turbine(v)
     choicer:prompt{
      {"yes", function()
        state_flags['holefilled'] = true
-       sfx(sfx_itemget)
+       sfx(003)
       end},
      {"no", function()
        dialoger:enqueue"you never know when you might need it."
@@ -1941,11 +1941,11 @@ function room_ocean(v)
  o_great.draw = drawgreat
 
  local o_chest = cur_room:add(t_chest('oceanr',vec8(11, 9), 181, vec(2, 1)))
- o_chest.getlines = {"you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\rsome enterprising sburb players have even weaponized this mechanic."}
+ o_chest.getlines = {"you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."}
 
  local o_kanaya = cur_room:add(t_npc(vec8(8, 9), 134))
  o_kanaya.color = 3
- o_kanaya.blip = sfx_blip2
+ o_kanaya.blip = 006
  function o_kanaya:interact(player)
   local choices = {
    {"roof", {
@@ -1998,7 +1998,7 @@ function room_ocean(v)
   rect(8, 24, 119, 87,4)
  end
 
- sfx(sfx_creak)
+ sfx(002)
 
 end
 
@@ -2115,8 +2115,8 @@ function room_chess(v)
   }
   -- todo frogs
   -- frogs: cute? temple? visions?
-  if chest_data['tilechest'] then
-   add(choices, {"frogs", {"TODO JADE FROG"}, 10})
+  if chest_data['frog'] then
+   add(choices, {"frogs", {"oh! what a cute little guy\r"}, 10})
   end
   t_npc.interact(self, player, choices)
  end
@@ -2216,17 +2216,17 @@ function _init()
  --  ocean=room_ocean,
  --  chess=room_chess
  -- }
- if debug then
+ -- if debug then
   --  menuitem(5,'toggle debug',function() debug = not debug end)
 
-  menuitem(1,'progress',function()
-    state_flags['holefilled'] = true
-    chest_data['limoncello'] = true
-    chest_data['clabdollar'] = true
-    chest_data['clabfaygo'] = true
-    chest_data['sciencetank'] = true
-   end)
- end
+ --  menuitem(1,'progress',function()
+ --    state_flags['holefilled'] = true
+ --    chest_data['limoncello'] = true
+ --    chest_data['clabdollar'] = true
+ --    chest_data['clabfaygo'] = true
+ --    chest_data['sciencetank'] = true
+ --   end)
+ -- end
 
  prettify_map()
  -- starting room
