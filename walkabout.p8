@@ -854,8 +854,8 @@ local dialoger = entity:extend{
 local choicer = entity:extend{
  z=4,
  upos=vec(64),
- padding=vec(4, 4),
- char_size=vec(4, 6),
+ padding=vec(3, 3),
+ char_size=vec(4, 5),
  size=nil,
  selected = 1,
  buttoncool = 0,
@@ -870,9 +870,11 @@ local choicer = entity:extend{
   for v in all(self.choices) do
    width = max(width, #v[1])
   end
-  width += 2
-  self.size = self.char_size:dotp(width, #self.choices) - vec_oneone*2
-  self.size += self.padding*2
+  width += 2 -- cursor
+  -- 2px spacing
+  self.char_size_spaced = self.char_size:__add(0, 2) -- compute once
+  self.size = self.char_size_spaced:dotp(width, #self.choices)
+  self.size += self.padding*2 - vec(1, 3) -- up to but not equal - last 2px space
   focus:push'choice'
   self.buttoncool = 4
  end,
@@ -882,19 +884,17 @@ local choicer = entity:extend{
   rectfill(mrconcatu(rbox, 0))
   rect(mrconcatu(rbox, 9))
   local ppos = self.upos + self.padding
-  color(7)
-  local char_size_spaced = self.char_size + vec(0, 1)
   for i,v in ipairs(self.choices) do
    print(v[1],
     mrconcatu(ppos:__add(
-      vec(2, i-1):dotp(char_size_spaced)
+      vec(2, i-1):dotp(self.char_size_spaced)
      ), v[3] or 7))
   end
   color(7)
   if (self.stage.mclock % 16 < 8) color(5)
   print("> ",
    ppos:__add(
-    vec(0, self.selected-1):dotp(char_size_spaced)
+    vec(0, self.selected-1):dotp(self.char_size_spaced)
    ):unpack())
  end,
  update = function(self)
@@ -2231,7 +2231,7 @@ function _init()
  prettify_map()
  -- starting room
  if (debug) then
-  room_stair()
+  room_t()
   focus:push'player'
  else
   cur_room = introscreen(90, function()
