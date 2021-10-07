@@ -54,9 +54,8 @@ end
 
 -- print all arguments
 function printa(...)
- local args={...}  -- becomes a table of arguments
  s = ""
- foreach(args, function(a) s ..= ','..tostring(a) end)
+ foreach({...}, function(a) s ..= ','..tostring(a) end)
  printh(s)
 end
 
@@ -1417,7 +1416,7 @@ function room_complab()
  local o_computer4 = cur_room:add(t_sign(vec8(27, 1), 010, vec8(2, 1), {
     bsize=vec_16_16}))
  o_computer4.paltab = {[6]=3}
- o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally. \rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
+ o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally.\rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
  }
  -- o_computer4:addline(
  --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
@@ -1451,10 +1450,9 @@ function room_complab()
  o_trash.obstructs = true
  o_trash.lines = {"there's suggestion in the trash. it just says the word \"alternia\".\ryou're glad that didn't get chosen. that would have been silly."}
 
- -- todo write dialogue
  local o_scalemate = cur_room:add(t_sign(vec(195, 78), 110, vec8(2, 1)))
  o_scalemate.lines = {
-  "someone has tied a noose around this plush dragon and left it lying on the floor\rlooking around, you don't see anything nearby you could hang a rope from."
+  "someone has tied a noose around this plush dragon and left it lying on the floor\rlooking around, you don't see anything nearby you could hang a rope from.\ror even, like, a chair to stand from."
  }
 
  local o_corner = cur_room:add(t_sign(vec16(0, 11), false, vec16(5, 5)))
@@ -1705,7 +1703,8 @@ function room_stair(v)
   }
   if chest_data['limoncello'] then
    add(choices, {"faygocello", {
-      "...\ryou are right to hold me to account for my sins."
+      "...\ryou are right to hold me to account for my sins.",
+      function() state_flags['faygocelloshown'] = true end
      }, 10})
   end
   t_npc.interact(self, player, choices)
@@ -1886,38 +1885,40 @@ function room_roof(v)
 
  o_pogo:update()
 
- local o_lamppost = cur_room:add(t_sign(vec8(6, 9), 078, vec_spritesize))
- o_lamppost.obstructs = true
- o_lamppost.tcol = 14
- o_lamppost.lines = {
-  function() sfx(007) end,
-  "it's the \falamppost\f7.\rquit the game?",
-  function()
-   choicer:prompt{
-    {"yes", function()
-      dialoger:enqueue"i mean, nobody's stopping you." end},
-    {"no", function()
-      dialoger:enqueue"ok cool" end},
+ if state_flags['faygocelloshown'] then
+   local o_lamppost = cur_room:add(t_sign(vec8(6, 9), 078, vec_spritesize))
+   o_lamppost.obstructs = true
+   o_lamppost.tcol = 14
+   o_lamppost.lines = {
+    function() sfx(007) end,
+    "it's the \falamppost\f7.\rquit the game?",
+    function()
+     choicer:prompt{
+      {"yes", function()
+        dialoger:enqueue"i mean, nobody's stopping you." end},
+      {"no", function()
+        dialoger:enqueue"ok cool" end},
+     }
+    end,
+    closure(poke, 0x5f80, 1)
    }
-  end,
-  closure(poke, 0x5f80, 1)
- }
 
- function o_lamppost:draw()
-  paltt(self.tcol)
-  spr(023, self.pos:unpack())
-  spr(022, self.pos:__sub(vec8(0, 4)):unpack())
-  local line_
-  line_ = bbox(self.pos + vec(3, -25), vec(0, 25))
-  line(mrconcatu(line_, 0))
-  line(mrconcatu(line_:shift(vec_x1), 5))
+   function o_lamppost:draw()
+    paltt(self.tcol)
+    spr(023, self.pos:unpack())
+    spr(022, self.pos:__sub(vec8(0, 4)):unpack())
+    local line_
+    line_ = bbox(self.pos + vec(3, -25), vec(0, 25))
+    line(mrconcatu(line_, 0))
+    line(mrconcatu(line_:shift(vec_x1), 5))
 
-  if (self.stage.mclock % 16 < 4 and rndi(6) == 0) self.flicker = true
-  if self.flicker then
-   pset(self.pos.x+3, self.pos.y-28, 9)
-   if (rndi(2) != 0) self.flicker = false
-  end
- -- mob.drawdebug(self)
+    if (self.stage.mclock % 16 < 4 and rndi(6) == 0) self.flicker = true
+    if self.flicker then
+     pset(self.pos.x+3, self.pos.y-28, 9)
+     if (rndi(2) != 0) self.flicker = false
+    end
+   -- mob.drawdebug(self)
+   end
  end
 
  cur_room:add(t_trigger(vec8(1, 11), vec8(.8, 2), room_turbine, {
@@ -2116,7 +2117,7 @@ function room_chess(v)
   -- todo frogs
   -- frogs: cute? temple? visions?
   if chest_data['frog'] then
-   add(choices, {"frogs", {"oh! what a cute little guy\r"}, 10})
+   add(choices, {"frogs", {"oh! what a cute little guy\rthere's a frog thing by my house but i don't think it has any frogs in it"}, 10})
   end
   t_npc.interact(self, player, choices)
  end
