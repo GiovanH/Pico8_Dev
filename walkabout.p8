@@ -1461,6 +1461,7 @@ function room_complab()
  end
 
  cur_room:add(newportal(center, room_t))
+ cur_room:update()
 
 end
 
