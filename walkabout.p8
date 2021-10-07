@@ -5,8 +5,6 @@ __lua__
 -- walkabout
 -- giovan_h
 
--- terezi dialog tree
-
 -- music item with disc/mp3 icon
 -- fake juju (it's just a lolilpop)
 -- a modern computer, but it doesn't have magic time powers
@@ -955,6 +953,7 @@ local t_sign = mob:extend{
 }
 function t_sign:interact(player, lines)
  lines = lines or self.lines
+ if (type(lines) == 'string') lines = {lines}
  if (player.cooldown > 0) return false
  if (#lines < 1) return false
  self.istalking = true
@@ -975,7 +974,7 @@ local t_chest = t_sign:extend{
  obstructs=true,
  bsize = vec8(2, 1),
  anchor = vec8(0,-1),
- getlines = {"you got a[] [???]"},
+ getlines = "you got a[] [???]",
  emptylines = {}
 }
 function t_chest:init(id, pos, ispr, isize, itcol)
@@ -1059,6 +1058,7 @@ function t_npc:interact(player, choices)
   r='l'
  }
  self.facing = facetable[player.facing]
+ if (type(choices) == 'string') choices = {choices}
  for i, s in ipairs(choices) do
   if type(choices[i]) == 'string' then
    -- choices is a list of lines
@@ -1285,7 +1285,7 @@ function t_player:update()
   self:tryinteract()
  end
 
- if (self.ismoving and (self.stage.mclock % 10 == 0)) sfx(008)
+ if (self.ismoving and self.stage.mclock % 10 == 0) sfx(008)
 
  self.stage.camfocus = self.pos
  mob.update(self)
@@ -1397,31 +1397,26 @@ function room_complab()
  o_player = cur_room:add(t_player(center))
 
  local o_computer1 = cur_room:add(t_sign(vec16(1.5, 0.5), 010, vec_16_16))
- o_computer1.lines = {
-  "two white lines of text are blown up to fill the entire screen.\rit's so huge you can read it from across the room.\ri wonder what it says."
- }
+ o_computer1.lines = "two white lines of text are blown up to fill the entire screen.\rit's so huge you can read it from across the room.\ri wonder what it says."
 
  local o_computer2 = cur_room:add(t_sign(vec8(11, 1), 112, vec8(2, 1), {bsize=vec_16_16}))
- o_computer2.lines = {
-  "looks like someone was planning a fundraising campaign for a video game.\rtoo bad they're just a troll."
- }
+ o_computer2.lines = "looks like someone was planning a fundraising campaign for a video game.\rtoo bad they're just a troll."
 
  local o_computer3 = cur_room:add(t_sign(vec8(19, 1), 116, vec_spritesize, {
     anchor=vec(4, 1), bsize=vec_16_16}))
- o_computer3.lines = {"it's an off-ice computer.\ryou can tell because someone is running troll powerpoint. it ticked past the last slide though."}
+ o_computer3.lines = "it's an off-ice computer.\ryou can tell because someone is running troll powerpoint. it ticked past the last slide though."
  o_computer3.tcol = 15
 
  local o_computer4 = cur_room:add(t_sign(vec8(27, 1), 010, vec8(2, 1), {
     bsize=vec_16_16}))
  o_computer4.paltab = {[6]=3}
- o_computer4.lines = {"wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally.\rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
- }
+ o_computer4.lines = "wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally.\rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
  -- o_computer4:addline(
  --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
 
  local o_teapot = cur_room:add(t_sign(vec16(15, 8), 050, vec8(2, 1)))
  o_teapot.tcol = 012
- o_teapot.lines = {"it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.\rthe sugar is arranged so as to be copyrightable intellectual property."}
+ o_teapot.lines = "it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.\rthe sugar is arranged so as to be copyrightable intellectual property."
 
  local o_chest = cur_room:add(t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone))
  o_chest.getlines = {
@@ -1429,16 +1424,14 @@ function room_complab()
 
  -- todo polish dialogue
  local o_chest = cur_room:add(t_chest('clabfaygo',vec8(23, 20), 043, vec(1, 2)))
- o_chest.getlines = {
-  "you got a faygo! a fun drink for fun people.\rit tastes like red pop."
- }
+ o_chest.getlines = "you got a faygo! a fun drink for fun people.\rit tastes like red pop."
+ 
 
  local o_cards = cur_room:add(t_sign(vec(172, 194), 034, vec8(2, 1)))
- o_cards.lines = {"these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."}
+ o_cards.lines = "these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."
 
  local o_plush = cur_room:add(t_sign(vec(142, 203), 032, vec_16_16))
- o_plush.lines = {
-  "it's a stray fiduspawn host plush.\ronce hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."}
+ o_plush.lines = "it's a stray fiduspawn host plush.\ronce hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."
 
  local o_trash = cur_room:add(t_sign(vec8(27, 28), 237, vec8(1, 2), {
     bsize=vec_spritesize,
@@ -1449,27 +1442,20 @@ function room_complab()
  o_trash.lines = {"there's suggestion in the trash. it just says the word \"alternia\".\ryou're glad that didn't get chosen. that would have been silly."}
 
  local o_scalemate = cur_room:add(t_sign(vec(195, 78), 110, vec8(2, 1)))
- o_scalemate.lines = {
-  "someone has tied a noose around this plush dragon and left it lying on the floor\rlooking around, you don't see anything nearby you could hang a rope from.\ror even, like, a chair to stand from."
- }
+ o_scalemate.lines = "someone has tied a noose around this plush dragon and left it lying on the floor.\rlooking around, you don't see anything nearby you could hang a rope from.\ror even, like, a chair to stand from."
 
  local o_corner = cur_room:add(t_sign(vec16(0, 11), false, vec16(5, 5)))
- o_corner.lines = {"this corner of the room feels strangely empty and unoccupied.\ryes, both."}
+ o_corner.lines = "this corner of the room feels strangely empty and unoccupied.\ryes, both."
 
  local o_karkat = cur_room:add(t_npc(vec(64, 64), 070))
  o_karkat.color = 5
  function o_karkat:interact(player)
   local choices = {
-   {"epilogues", {
-     "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."
-    }},
-   {"dave", {
-     "i have had literally one interaction with the guy and it ended up being all about vriska.\rbecause of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.\ri'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, people are fucking dead and i'm not going to chose this particular moment to star tlisting off all the cool perks of getting murdered."
-    }}
+   {"epilogues", "the fuck are you talking about? we have bigger things to deal with right now than ill-advised  movie sequels or whatever it is you're distracted with."},
+   {"dave", "i have had literally one interaction with the guy and it ended up being all about vriska.\rbecause of course literally fucking everything has to be about vriska if you're unfortunate enough to get stuck in the same universe as her. or apparently even if you're not.\ri'd joke about offing yourself being the only way to escape her absurd machivellian horseshit but at this point she's probably fucked up death too. also, people are fucking dead and i'm not going to chose this particular moment to start listing off all the cool perks of getting murdered."}
   }
   if chest_data['clabdollar'] then
-   add(choices, {"boondollars", {
-      "oh fuck no. get those out of my face\rterezi's been filling the place with those. they're a worthless eyesore.\rwhy do you think i put them in all the chests?"}, 10})
+   add(choices, {"boondollars", "oh fuck no. get those out of my face.\rterezi's been filling the place with those. they're a worthless eyesore.\rwhy do you think i put them in all the chests?", 10})
   end
   t_npc.interact(self, player, choices)
  end
@@ -1486,8 +1472,8 @@ function room_t(v)
  o_chest = cur_room:add(
   t_chest('scalemate',vec8(5, 5), 142, vec_twotwo, 15)
  )
- o_chest.getlines = {"you got another scalemate!\rthere was also a rope in the chest. you decide to leave it and take the scalemate far away." }
- o_chest.emptylines = {"there was also a rope in the chest. you decide to leave it and take the scalemate far away."}
+ o_chest.getlines = "you got another scalemate!\rthere was also a rope in the chest. you decide to leave it and take the scalemate far away."
+ o_chest.emptylines = "there was also a rope in the chest. you decide to leave it and take the scalemate far away."
 
  o_scalehang = cur_room:add(actor(vec16(5, 3.5), 142, vec_16_16, {
     anchor = vec8(0,-5)
@@ -1505,14 +1491,10 @@ function room_t(v)
  o_terezi.color = 3
  function o_terezi:interact(player)
   local choices = {
-   {"up to", {
-     "oh, 1'm not up to 4nyth1ng\rjust h4ng1ng 4round >:]"
-    }},
+   {"up to", "oh, 1'm not up to 4nyth1ng\rjust h4ng1ng 4round >:]"},
   }
   if chest_data['scalemate'] then
-   add(choices, {"scalemate", {
-      "you c4n h4ng on3 1f you w4nt 1 dont m1nd\rjust m4k3 sur3 you go through du3 proc3ss f1rst\ror 4ny proc3ss r3411y\rjust1c3 1s mostly 4bout m4k1ng sur3 to s4y you'r3 do1ng just1c3 4 lot wh1l3 you do wh4t3v3r"
-     }, 10})
+   add(choices, {"scalemate", "you c4n h4ng on3 1f you w4nt 1 dont m1nd\rjust m4k3 sur3 you go through du3 proc3ss f1rst\ror 4ny proc3ss r3411y\rjust1c3 1s mostly 4bout m4k1ng sur3 to s4y you'r3 do1ng just1c3 4 lot wh1l3 you do wh4t3v3r", 10})
   end
   t_npc.interact(self, player, choices)
  end
@@ -1573,9 +1555,7 @@ function room_lab(v)
   if chest_data['sciencetank'] then
    local choices = {
     {"frog", closure(t_sign.interact, self, player)},
-    {"science tank", closure(t_sign.interact, self, player, {
-       "we use those to make the frogs."
-      }), 10}
+    {"science tank", closure(t_sign.interact, self, player, "we use those to make the frogs."), 10}
    }
    choicer:prompt(choices)
   else
@@ -1586,9 +1566,8 @@ function room_lab(v)
  if (state_flags['frog_flipped']) cur_room:add(o_frog)
 
  o_chest = cur_room:add(t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10))
- o_chest.getlines = {
-  "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.\rno matter what your genre, if you've got something significant to do and really want to make it official, you've gotta have a room full of these bad boys around."}
- o_chest.emptylines = {"someone has carved a hole into the floor to give this chest space for an extra-tall item."}
+ o_chest.getlines = "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.\rno matter what your genre, if you've got something significant to do and really want to make it official, you've gotta have a room full of these bad boys around."
+ o_chest.emptylines = "someone has carved a hole into the floor to give this chest space for an extra-tall item."
 
  cur_room:add(newportal(vec(64, 84), room_t, {
     facing='d',
@@ -1608,11 +1587,9 @@ function room_hallway(v)
  greydoor.tcol = 1
  function greydoor:interact(player)
   if self.talkedto < 1 then
-   self.lines = {
-    "it's locked. you can't open it. or, it's not locked, and you could open the door. or maybe something else. is it even a door?\ryou don't open it."
-   }
+   self.lines = "it's locked. you can't open it. or, it's not locked, and you could open the door. or maybe something else. is it even a door?\ryou don't open it."
   else
-   self.lines = {"the door reeks of indeterminism. "}
+   self.lines = "the door reeks of indeterminism. "
   end
   t_sign.interact(self, player)
  end
@@ -1643,16 +1620,14 @@ function room_stair(v)
  end
 
  local o_plush = cur_room:add(t_sign(vec(80, 141), 032, vec_16_16))
- o_plush.lines = {"he must be lost.\rfortunately his owner can safely walk down here and retrieve him."}
+ o_plush.lines = "he must be lost.\rfortunately his owner can safely walk down here and retrieve him."
 
  local o_chest = cur_room:add(t_chest('stair1',vec16(5, 2), 003, vec_twotwo))
  o_chest.getlines = {"you got a chest! the perfect container to store things in.","since only protagonists can open them, it's very secure."}
- o_chest.emptylines = {"it was only big enough to hold one chest."}
+ o_chest.emptylines = "it was only big enough to hold one chest."
 
  local o_chest2 = cur_room:add(t_chest('stair2',vec16(2, 2), 206, vec_twotwo, 12))
- o_chest2.getlines = {
-  "you got minihoof!\rsmall enough to sit on your desk, horse enough to be entirely inconvenient to care for.\rtotally worth it though."
- }
+ o_chest2.getlines = "you got minihoof!\rsmall enough to sit on your desk, horse enough to be entirely inconvenient to care for.\rtotally worth it though."
 
  local o_stair_rail = cur_room:add(mob(vec(65, 80), nil, vec(15, 1)))
  o_stair_rail.obstructs = true
@@ -1719,11 +1694,10 @@ function room_stair(v)
     anchor=vec8(0, -1)
    }))
  o_vue.tcol = 14
- o_vue.lines = {
-  "it looks like he has been trying to copy media from the past into the present.\ra fool's errand."}
+ o_vue.lines = "it looks like he has been trying to copy media from the past into the present.\ra fool's errand."
 
  local o_p8cart = cur_room:add(t_sign(vec8(8, 23), 183, vec_spritesize))
- o_p8cart.lines = {"it's a pico-8 game cartridge. these things have a maximum capacity of about 90% the size of just the first animated panel of mspa, so programming one can be a royal headache.\rbut sometimes you've got to take off your archivist's stovetop hat and toil for a minute\runder the pulled-back baseball cap of the secrets' sommelier.\ryou think you'll stick with godot instead."}
+ o_p8cart.lines = "it's a pico-8 game cartridge. these things have a maximum capacity of about 90% the size of just the first animated panel of mspa, so programming one can be a royal headache.\rbut sometimes you've got to take off your archivist's stovetop hat and toil for a minute\runder the pulled-back baseball cap of the secrets' sommelier.\ryou think you'll stick with godot instead."
 
  local o_great = cur_room:add(t_button(vec16(1, 6), false, vec_16_16))
  o_great.interact = function()
@@ -1734,7 +1708,7 @@ function room_stair(v)
  o_great.draw = drawgreat
 
  local o_horsehole = cur_room:add(t_sign(vec16(6, 7), false, vec8(1, 2)))
- o_horsehole.lines = {"through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.\ryou hear a distant winney."}
+ o_horsehole.lines = "through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.\ryou hear a distant winney."
 
 end
 
@@ -1752,9 +1726,8 @@ function room_turbine(v)
 
  if (not state_flags['frog_flipped']) then
   local o_chest = cur_room:add(t_chest('frog',vec8(20, 11), 174, vec_twotwo))
-  o_chest.getlines = {"you found a contraband amphibian!\rhe says something about being hidden better than the other frog.\ryou pet the frog."
-  }
-  o_chest.emptylines = {"you have left this chest so much the poorer."}
+  o_chest.getlines = "you found a contraband amphibian!\rhe says something about being hidden better than the other frog.\ryou pet the frog."
+  o_chest.emptylines = "you have left this chest so much the poorer."
  end
 
  local o_hole = cur_room:add(mob(vec16(10, 3), 008, vec16(1, 1)))
@@ -1826,9 +1799,7 @@ function room_turbine(v)
  o_andrew.tcol = 14
 
  local o_cantreach = cur_room:add(t_sign(vec8(19, 11), false, vec_spritesize))
- o_cantreach.lines = {
-  "try as you might, you can't cross the gap.\rprobably would have been a disappointment, honestly."
- }
+ o_cantreach.lines = "try as you might, you can't cross the gap.\rprobably would have been a disappointment, honestly."
 
  cur_room:add(t_trigger(vec8(2, 15.5), vec8(2, .5), room_stair, {
     facing='d',
@@ -1856,14 +1827,10 @@ function room_roof(v)
  o_chest.paltab = paltab_prospitchest
  o_chest.ipaltab = {[11]=12, [0]=6}
  o_chest.itcol = 3
- o_chest.getlines = {
-  "you got a rare off-color slimer!\ran artifact of a simpler time."
- }
+ o_chest.getlines = "you got a rare off-color slimer!\ran artifact of a simpler time."
 
  local o_chest = cur_room:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone))
- o_chest.getlines = {
-  "it's a glass of... what is that, faygo cut with limoncello?\ra drink for the direst of circumstances."
- }
+ o_chest.getlines = "it's a glass of... what is that, faygo cut with limoncello?\ra drink for the direst of circumstances."
 
  local o_pogo = cur_room:add(t_sign(vec8(12, 9), 078, vec_16_16, {bsize=vec_spritesize}))
  o_pogo.obstructs = true
@@ -1872,7 +1839,7 @@ function room_roof(v)
   "thanks to the miracle of digital technology, the pogo ride has been effortlessly preserved to the exact specifications of the designer, a feat unheard of in any previous era.\rbut it doesn't work anymore.",
   function()
    o_pogo.update = mob.update
-   o_pogo.lines = {"it seems someone has replaced the ride with a still photo."}
+   o_pogo.lines = "it seems someone has replaced the ride with a still photo."
   end
  }
 
@@ -1940,26 +1907,20 @@ function room_ocean(v)
  o_great.draw = drawgreat
 
  local o_chest = cur_room:add(t_chest('oceanr',vec8(11, 9), 181, vec(2, 1)))
- o_chest.getlines = {"you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."}
+ o_chest.getlines = "you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."
 
  local o_kanaya = cur_room:add(t_npc(vec8(8, 9), 134))
  o_kanaya.color = 3
  o_kanaya.blip = 006
  function o_kanaya:interact(player)
   local choices = {
-   {"roof", {
-     "oH i'M jUST eNJOYING tHE vIEW\rtHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT\ri kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT hABIT cAN bE a pOWERFUL tHING i sUPPOSE"
-    }},
+   {"roof", "oH i'M jUST eNJOYING tHE vIEW\rtHE oTHERS uSUALLY dO nOT cOME oUT hERE wITH aLL tHE sUNLIGHT\ri kEEP tELLING tHEM iT'S a mADCAP sECRET wALKAROUND uNIVERSE aND tHE lIGHT iS tHE nORMAL nONFATAL kIND bUT hABIT cAN bE a pOWERFUL tHING i sUPPOSE"},
   }
   if chest_data['clabfaygo'] then
-   add(choices, {"redpop", {
-      "i\reR\ruH\rwELL\ri tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU\rpERHAPS gAMZEE mIGHT bE mORE INCLINED\roR eLSE sOMEONE nEARER a dRAIN"
-     }, 10})
+   add(choices, {"redpop", "i\reR\ruH\rwELL\ri tHINK i wILL hAVE tO pASS tHIS tIME tHANK yOU\rpERHAPS gAMZEE mIGHT bE mORE INCLINED\roR eLSE sOMEONE nEARER a dRAIN", 10})
   end
   if chest_data['oceanr'] then
-   add(choices, {"loot", {
-      "oH yES fEEL fREE tO tAKE tHAT i wASNT uSING iT fOR aNYTHING\rtO eACH aCCORDING tO tHEIR gREED aND wHATNOT\rsEE tHE jOKE iS tHAT i aM jUDGING yOU"
-     }, 10})
+   add(choices, {"loot", "oH yES fEEL fREE tO tAKE tHAT i wASNT uSING iT fOR aNYTHING\rtO eACH aCCORDING tO tHEIR gREED aND wHATNOT\rsEE tHE jOKE iS tHAT i aM jUDGING yOU", 10})
   end
   t_npc.interact(self, player, choices)
  end
@@ -1984,7 +1945,7 @@ function room_ocean(v)
     dialoger:enqueue"you caught a fish!"
     dialoger:enqueue("but nothing happened.", {callback=function()
        player.facing = 'd'
-       t_npc.interact(o_kanaya, player, {"\f3wHAT aRE yOU dOING oVER tHERE\roR dO i nOT wANT tO kNOW\roN cLOSER iNSPECTION iM tHINKING iT iS tHE lATTER"})
+       t_npc.interact(o_kanaya, player, "\f3wHAT aRE yOU dOING oVER tHERE\roR dO i nOT wANT tO kNOW\roN cLOSER iNSPECTION iM tHINKING iT iS tHE lATTER")
       end})
    end
    self:add(fish)
@@ -2042,14 +2003,12 @@ function room_chess(v)
  -- Todo polish dialog
  local o_stalemate_w = cur_room:add(t_sign(vec8(7, 12), 066, vec8(2, 3)))
  npcify(o_stalemate_w)
- o_stalemate_w.lines = {
-  "it's a north-going prospitian.\rit looks like they're stuck.\rthey look enraged."}
+ o_stalemate_w.lines = "it's a north-going prospitian.\rit looks like they're stuck.\rthey look enraged."
 
  local o_stalemate_b = cur_room:add(t_sign(vec8(7, 11), 064, vec8(2, 3)))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab=paltab_dersite
- o_stalemate_b.lines = {
-  "it's a south-going dersite.\rit looks like they're stuck.\rseems they've accepted it."}
+ o_stalemate_b.lines = "it's a south-going dersite.\rit looks like they're stuck.\rseems they've accepted it."
 
  local o_promoguy = cur_room:add(t_npc(vec8(12.5, 7), 064))
  o_promoguy.step = vec_x1
@@ -2067,9 +2026,7 @@ function room_chess(v)
  end
  function o_promoguy:interact(p)
   local wasfacing = self.facing
-  t_npc.interact(self, p, {
-    "i have to keep at it if i want to get that promotion.\r...what do you mean i'm going the wrong way?"
-   })
+  t_npc.interact(self, p, "i have to keep at it if i want to get that promotion.\r...what do you mean i'm going the wrong way?")
   dialoger:enqueue('',{callback=function() self.facing = wasfacing end})
  end
 
@@ -2078,25 +2035,17 @@ function room_chess(v)
 
  local o_chest_tile = cur_room:add(t_chest('tilechest',vec8(5, 5), 008, vec_twotwo))
  o_chest_tile.paltab = paltab_prospitchest
- o_chest_tile.getlines = {
-  "you found a floor tile!\ryou are filled with relief at some semblance of linear progression."
- }
+ o_chest_tile.getlines = "you found a floor tile!\ryou are filled with relief at some semblance of linear progression."
 
  local o_chest_nendroid = cur_room:add(t_chest('nendroid',vec8(8, 5), 238, vec_twotwo))
  o_chest_nendroid.paltab = paltab_prospitchest
  o_chest_nendroid.itcol = 15
- o_chest_nendroid.getlines = {
-  "you found a homestuck nendroid!\rah. truly, you're living your best timeline."
- }
+ o_chest_nendroid.getlines = "you found a homestuck nendroid!\rah. truly, you're living your best timeline."
 
  local o_chest_chaos = cur_room:add(t_chest('chaose',vec8(24, 13), 124, vec_oneone))
  o_chest_chaos.paltab = paltab_prospitchest
- o_chest_chaos.getlines = {
-  "you found a chaos emerald! can you find them all?\r(you have already found them all)"
- }
- o_chest_chaos.emptylines = {
-  "weird, there's room in here for like six or eight."
- }
+ o_chest_chaos.getlines = "you found a chaos emerald! can you find them all?\r(you have already found them all)"
+ o_chest_chaos.emptylines = "weird, there's room in here for like six or eight."
 
  local o_jade = cur_room:add(t_npc(vec8(23, 6), 192))
  o_jade.color = 11
@@ -2105,17 +2054,13 @@ function room_chess(v)
  -- todo more dialogue
  function o_jade:interact(player)
   local choices = {
-   {"walkaround", {
-     "yeah, it feels good to wake up and stretch my legs!!\rsometimes it feels like i'm gonna spend my whole life dreaming. well awake but... oh, you know!\rbut that's all going to change soon! i think....."
-    }},
-   {"dogs", {
-     "ok yes that's one thing about prospit that suuucks :(\rthe people here are all very nice but there's no dogs or animals anywhere\rsure bec can be a bossypants sometimes but i still think these guys are missing out!"
-    }},
+   {"walkaround", "yeah, it feels good to wake up and stretch my legs!!\rsometimes it feels like i'm gonna spend my whole life dreaming. well awake but... oh, you know!\rbut that's all going to change soon! i think....."},
+   {"dogs", "ok yes that's one thing about prospit that suuucks :(\rthe people here are all very nice but there's no dogs or animals anywhere\rsure bec can be a bossypants sometimes but i still think these guys are missing out!"},
   }
   -- todo frogs
   -- frogs: cute? temple? visions?
   if chest_data['frog'] then
-   add(choices, {"frogs", {"oh! what a cute little guy\rthere's a frog thing by my house but i don't think it has any frogs in it"}, 10})
+   add(choices, {"frogs", "oh! what a cute little guy\rthere's a frog thing by my house but i don't think it has any frogs in it", 10})
   end
   t_npc.interact(self, player, choices)
  end
