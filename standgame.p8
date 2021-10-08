@@ -367,8 +367,9 @@ function mob:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  actor.init(self, pos, spr_, size, kwargs)
  self.bsize = chainmap('bsize', kwargs, self) or self.size
- self.hbox_offset = chainmap('hbox_offset', kwargs, self)
- self.dynamic = chainmap('dynamic', kwargs)
+ for prop in all{'hbox_offset', 'dynamic'} do
+  self[prop] = chainmap(prop, kwargs, self)
+ end
  self.hbox = self:get_hitbox()
 -- assert(mob.bsize == nil, 'mob class bsize set')
 end

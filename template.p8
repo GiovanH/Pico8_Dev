@@ -25,11 +25,20 @@ function tostring(any, depth)
  return str.."}"
 end
 
+-- integer to zero padded string
+function itostr(v,n)
+ local s = ""..v
+ local t = #s
+ for i=1,n-t do
+  s="0"..s
+ end
+ return s
+end
+
 -- print all arguments
 function printa(...)
- local args={...}  -- becomes a table of arguments
  s = ""
- foreach(args, function(a) s ..= ','..tostring(a) end)
+ foreach({...}, function(a) s ..= ','..tostring(a) end)
  printh(s)
 end
 
@@ -90,9 +99,9 @@ function sort(list, keyfunc)
 end
 
 function sorted(list, keyfunc)
-  local temp = {unpack(list)}
-  sort(temp, keyfunc)
-  return temp
+ local temp = {unpack(list)}
+ sort(temp, keyfunc)
+ return temp
 end
 
 -- clamp query between min/max
@@ -148,7 +157,7 @@ function vec:init(x, y)
  x or 0, y or x or 0
 end
 function vec8(x, y) return vec(x, y)*8 end
-local vec_spritesize = vec(8, 8)
+local vec_8_8 = vec(8, 8)
 local vec_16_16 = vec(16, 16)
 local vec_oneone = vec(1, 1)
 local vec_zero = vec(0, 0)
@@ -281,21 +290,24 @@ function entity:destroy() self._doomed = true end
 -- tcol: color # to mark as transparent
 -- z_is_y: auto set z to pos.y
 local actor = entity:extend{
- size = vec_spritesize,
+ size = vec_8_8,
  anchor = vec_zero,
+ offset = vec_zero,
  anim = nil,
  frame_len = 1,
  flipx = false,
  flipy = false,
  tcol = 0,
  paltab = nil,
- z_is_y = true,  -- domain: camera perspective
+ z_is_y = false,  -- domain: camera perspective
 }
 function actor:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
- self.anchor = kwargs.anchor or self.anchor
- self._apos = self.pos:__add(self.anchor)
+ for prop in all{'anchor', 'offset', 'z_is_y'} do
+  self[prop] = chainmap(prop, kwargs, self)
+ end
+ self._apos = self.pos:__add(self.anchor):__add(self.offset)
 end
 function actor:rel_anchor(x, y)
  self.anchor = vec(self.size.x*x, self.size.y*y)
@@ -309,7 +321,7 @@ function actor:drawdebug()
  end
 end
 function actor:update()
- self._apos = self.pos:__add(self.anchor)
+ self._apos = self.pos + self.anchor + self.offset
  if (self.z_is_y) self.z = self.pos.y
  entity.update(self)
 end
@@ -350,11 +362,12 @@ local mob = actor:extend{
 function mob:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  actor.init(self, pos, spr_, size, kwargs)
- self.bsize = kwargs.bsize or self.bsize or self.size
- self.hbox_offset = kwargs.hbox_offset or self.hbox_offset
- self.dynamic = kwargs.dynamic
+ self.bsize = chainmap('bsize', kwargs, self) or self.size
+ for prop in all{'hbox_offset', 'dynamic'} do
+  self[prop] = chainmap(prop, kwargs, self)
+ end
  self.hbox = self:get_hitbox()
- assert(mob.bsize == nil, 'mob class bsize set')
+-- assert(mob.bsize == nil, 'mob class bsize set')
 end
 function mob:get_hitbox(pos)
  return bbox(

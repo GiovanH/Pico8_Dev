@@ -9,6 +9,8 @@ __lua__
 -- fake juju (it's just a lolilpop)
 -- a modern computer, but it doesn't have magic time powers
 -- huggable soft slamancer plush 003705
+-- status structures for assholes
+-- fiduspawn go to the polls
 
 -- global vars
 local o_player
@@ -1213,8 +1215,6 @@ function t_player:_moveif(step, facing)
 end
 function t_player:move()
  -- player movement
- local vright = vec_x1
- local vdown = vec_y1
  local speed = 2
 
  if (speedshoes and btn(5)) speed = 3
