@@ -1,13 +1,12 @@
 pico-8 cartridge // http://www.pico-8.com
 version 33
 __lua__
-
--- title
--- author
+-- the game
+-- gIOVANh
 
 -- global vars
 
-local debug = true  -- (stat(6) == 'debug')
+local debug = (stat(6) == 'debug')
 
 local cur_room
 local o_player
@@ -939,6 +938,7 @@ end
 
 local t_player = isomob:extend{
  ismoving = false,
+ dynamic = true,
  facing = 'd',
  spr0 = 0,
  cooldown = 0,
@@ -1044,7 +1044,6 @@ function t_player:update()
 
  self.stage.camfocus = self.pos
  isomob.update(self)
- self.hbox = self:get_hitbox()
 end
 
 function t_player:draw()
@@ -1267,7 +1266,6 @@ function r_closet:init(v)
   for stuckpos in all(split(
     "0,7|0,14|14,7|14,14|4,8|5,7|11,8|10,9|7,9|8,7"
     , "|")) do
-   printh(stuckpos)
    if (self.pos == vec8(unpack(split(stuckpos)))) stuck = true; break
   end
   if (stuck) return t_sign.interact(self, p, "it's stuck.")
@@ -1320,7 +1318,7 @@ function r_street:init(v)
  local o_door = self:add(mob(vec8(27, 5), nil, vec8(1,2)))
  function o_door:interact(p)
   cur_room = r_arcade()
-  -- cur_room:update()
+ -- cur_room:update()
  end
  function o_door:draw()
   print("arcade", 210, 33, 0)
@@ -1361,6 +1359,7 @@ function r_street:init(v)
  self:add(mob(vec8(12, 7), nil, vec(1,16), {obstructs=true}))
 
  function o_rfount:update()
+  if (self.stage != cur_room) return
   for i=1,4 do
    self.stage:add(particle(self._apos, vec(rndr(-1.5, 1.5), -rnd()), vec(0,.4), 10, 12, self.z))
   end
@@ -1422,7 +1421,7 @@ r_arcade = room:extend{
 function r_arcade:init(v)
  room.init(self, v)
  o_player.facing = 'u'
- dbg.print(self.objects, 'arcade init')
+ -- dbg.print(self.objects, 'arcade init')
  self:add(t_trigger(vec8(7, 13.5), vec8(2, 0.5), r_street, {
     pos=vec8(27.5, 8)
    }))
@@ -1453,7 +1452,7 @@ function r_arcade:init(v)
  function o_machin:interact(p)
   cur_room = r_subgame()
  end
- dbg.print(self.objects, 'arcade postinit')
+-- dbg.print(self.objects, 'arcade postinit')
 end
 
 r_subgame = room:extend{
@@ -1473,7 +1472,7 @@ function r_subgame:init(v)
  function self:update()
   room.update(self)
   if (btnp(4)) cur_room = r_arcade(vec8(8, 7))
-  -- cur_room:update()
+ -- cur_room:update()
  end
 
  local subscoreui = self:add(entity())

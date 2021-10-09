@@ -1,7 +1,6 @@
 pico-8 cartridge // http://www.pico-8.com
 version 33
 __lua__
-
 -- title
 -- author
 
@@ -84,6 +83,8 @@ function rndr(a, b) return rnd(b - a) + a end
 
 -- random int [0, n)
 function rndi(n) return flr(rnd(n)) end
+
+function rndc(t) return t[1+rndi(#t)] end
 
 --- sort list by keyfunc
 function sort(list, keyfunc)
@@ -176,6 +177,7 @@ function vec:__sub(v, y)
  return vec(self.x - v.x, self.y - v.y)
 end
 function vec:__mul(n) return vec(self.x * n, self.y * n) end
+function vec:__eq(v) return self.x == v.x and self.y == v.y end
 function vec:__div(n) return vec(self.x / n, self.y / n) end
 function vec:__tostring() return "(" .. self.x .. ", " .. self.y .. ")" end
 function vec:unpack() return self.x, self.y end
@@ -304,10 +306,10 @@ local actor = entity:extend{
 function actor:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
- for prop in all{'anchor', 'offset', 'z_is_y'} do
+ for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
   self[prop] = chainmap(prop, kwargs, self)
  end
- self._apos = self.pos:__add(self.anchor):__add(self.offset)
+ self._apos = self.pos + self.anchor + self.offset
 end
 function actor:rel_anchor(x, y)
  self.anchor = vec(self.size.x*x, self.size.y*y)
@@ -363,11 +365,10 @@ function mob:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  actor.init(self, pos, spr_, size, kwargs)
  self.bsize = chainmap('bsize', kwargs, self) or self.size
- for prop in all{'hbox_offset', 'dynamic'} do
+ for prop in all{'hbox_offset', 'dynamic', 'paltab', 'obstructs'} do
   self[prop] = chainmap(prop, kwargs, self)
  end
  self.hbox = self:get_hitbox()
--- assert(mob.bsize == nil, 'mob class bsize set')
 end
 function mob:get_hitbox(pos)
  return bbox(
