@@ -274,12 +274,14 @@ function entity:init(kwargs)
  kwargs = kwargs or {}
  self.ttl = kwargs.ttl or self.ttl
  self.z = kwargs.z or self.z
+ if (self.coupdate) self._coupdate = cocreate(self.coupdate, self)
 end
 function entity:update()
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
+ if (self._coupdate) assert(coresume(self._coupdate, self))
 end
 function entity:destroy() self._doomed = true end
 
@@ -308,6 +310,7 @@ local actor = entity:extend{
  z_is_y = false,  -- domain: camera perspective
 }
 function actor:init(pos, spr_, size, kwargs)
+ entity.init(self)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
  for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
@@ -381,27 +384,31 @@ function mob:get_hitbox(pos)
  )
 end
 function mob:update()
- actor.update(self)
  if (self.dynamic) self.hbox = self:get_hitbox()
+ actor.update(self)
 end
 function mob:drawdebug()
  if debug then
   -- print bbox and anchor/origin WITHIN box
   local drawbox = self.hbox:grow(vec_noneone)
   rect(mrconcatu(drawbox, 2))
-  actor.drawdebug(self)
  end
+ actor.drawdebug(self)
 end
 
 -- particle
 -- pos, vel, acc, ttl, col, z
-local particle = entity:extend{}
+-- set critical to true to force the particle even during slowdown
+local particle = entity:extend{
+ critical=false
+}
 function particle:init(pos, ...)
  -- assert(self != particle)
  entity.init(self)
  self.pos = pos
  self.vel, self.acc, self.ttl, self.col, self.z = ...
  if (self.z) self.z_is_y = false
+ if (stat(7) < 30 and not self.critical) self:destroy()
 end
 function particle:update()
  self.vel += self.acc
@@ -1198,13 +1205,13 @@ function r_thegame:init(v)
   mob.draw(self)
  end
  function o_scorer:update()
-  mob.update(self)
   if focus:is'player' and self.stage.mclock % 30 == 0 then
    if o_player.hbox:within(self.hbox) then
     score += 1
     sfx(000)
    end
   end
+  mob.update(self)
  end
 
  self:add(t_trigger(vec8(0, 8), vec8(0.5, 3), r_closet))
@@ -1304,16 +1311,16 @@ function r_street:init(v)
   cloud.tcol = 1
  end
 
- -- function self:update()
- --  if (self.mclock % 240 == 0) newcloud(-2)
- --  room.update(self)
- -- end
+ function self:update()
+  if (self.mclock % 240 == 0) newcloud(-2)
+  room.update(self)
+ end
 
- -- for x = 0, 16 do
- --  newcloud(8*x + rndr(0, 8))
- -- end
+ for x = 0, 16 do
+  newcloud(8*x + rndr(0, 8))
+ end
 
- -- self:add(t_trigger(vec8(0, 12), vec8(0.5, 3), r_closet))
+ self:add(t_trigger(vec8(0, 12), vec8(0.5, 3), r_closet))
 
  local o_door = self:add(mob(vec8(27, 5), nil, vec8(1,2)))
  function o_door:interact(p)
@@ -1378,6 +1385,32 @@ function r_maze:init(v)
     pos=vec8(15, 10)
    }))
 
+ local megablock = mob:extend{
+  paltab={[9]=8}
+ }
+ function megablock:coupdate()
+  local i = 10
+  while true do
+   i += 1
+   if i > #self.states then
+    sort(self.states, function(a) return rnd() end)
+    i = 1
+   end
+   if self.states[i] and not o_player.hbox:overlaps(self.hbox) then
+    self.obstructs = true
+    self.spr = 071
+    yield()
+    self.tcol = nil
+   else
+    self.tcol = 4
+    yield()
+    self.obstructs = false
+    self.spr = nil
+   end
+   yieldn(60)
+  end
+ end
+
  for pos in all({
    vec8(6, 10),
    vec8(6, 7),
@@ -1386,27 +1419,8 @@ function r_maze:init(v)
    vec8(16, 7),
    vec8(4, 3),
   }) do
-  local block = self:add(mob(pos, 071, vec_8_8, {
-     paltab={[9]=8}
-    }))
-  block.i = 10
+  local block = self:add(megablock(pos, 071, vec_8_8))
   block.states = {false, false, true, true, true, true}
-  function block:update()
-   if self.stage.mclock % 60 == 0 then
-    self.i += 1
-   end
-   if self.i > #block.states then
-    sort(self.states, function(a) return rnd() end)
-    self.i = 1
-   end
-   if self.states[self.i] and not o_player.hbox:overlaps(self.hbox) then
-    self.obstructs = true
-    self.spr = 071
-   else
-    self.obstructs = false
-    self.spr = nil
-   end
-  end
  end
 
  local o_guy = self:add(t_npc(vec8(30, 9), nil, vec8(1,2),
@@ -1483,13 +1497,13 @@ function r_subgame:init(v)
 
  local o_scorer = self:add(mob(vec8(6, 7), nil, vec8(4, 3)))
  function o_scorer:update()
-  mob.update(self)
   if focus:is'player' and self.stage.mclock % 30 == 0 then
    if o_player.hbox:within(self.hbox) then
     subscore += 1
     sfx(000)
    end
   end
+  mob.update(self)
  end
 end
 -->8
