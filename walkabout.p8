@@ -82,7 +82,7 @@ function chainmap(query, ...)
  end
 end
 
--- create a closure
+-- returns a function that runs fn with specified arguments
 function closure(fn, ...)
  local vars = {...}
  return (function() fn(unpack(vars)) end)
@@ -285,14 +285,16 @@ local entity = obj:extend{
 }
 function entity:init(kwargs)
  kwargs = kwargs or {}
- self.ttl = chainmap('ttl', kwargs, self)
- self.z = chainmap('z', kwargs, self)
+ self.ttl = kwargs.ttl or self.ttl
+ self.z = kwargs.z or self.z
+ if (self.coupdate) self._coupdate = cocreate(self.coupdate, self)
 end
 function entity:update()
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
+ if (self._coupdate) assert(coresume(self._coupdate, self))
 end
 function entity:destroy() self._doomed = true end
 
@@ -405,13 +407,17 @@ end
 
 -- particle
 -- pos, vel, acc, ttl, col, z
-local particle = entity:extend{}
+-- set critical to true to force the particle even during slowdown
+local particle = entity:extend{
+ critical=false
+}
 function particle:init(pos, ...)
  -- assert(self != particle)
  entity.init(self)
  self.pos = pos
  self.vel, self.acc, self.ttl, self.col, self.z = ...
  if (self.z) self.z_is_y = false
+ if (stat(7) < 30 and not self.critical) self:destroy()
 end
 function particle:update()
  self.vel += self.acc
