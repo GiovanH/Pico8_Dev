@@ -319,7 +319,7 @@ function actor:init(pos, spr_, size, kwargs)
  entity.init(self)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
- for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
+ for prop in all{'anchor', 'offset', 'z_is_y', 'tcol', 'paltab'} do
   self[prop] = chainmap(prop, kwargs, self)
  end
  self._apos = self.pos + self.anchor + self.offset
@@ -378,7 +378,7 @@ function mob:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  actor.init(self, pos, spr_, size, kwargs)
  self.bsize = chainmap('bsize', kwargs, self) or self.size
- for prop in all{'hbox_offset', 'dynamic', 'paltab', 'obstructs'} do
+ for prop in all{'hbox_offset', 'dynamic', 'obstructs'} do
   self[prop] = chainmap(prop, kwargs, self)
  end
  self.hbox = self:get_hitbox()
@@ -429,9 +429,9 @@ function particle:draw()
   pset(self.pos.x, self.pos.y, self.col)
  end
 end
-function sprparticle(spr, size, ...)
+function sprparticle(spr_, size, ...)
  local p = particle(...)
- p.spr = spr
+ p.spr = spr_
  p.size = size
  return p
 end
@@ -444,9 +444,7 @@ end
 -- :schedule(tics, callback) to execute callback in # ticks
 -- mclock is highly composite modulo clock
 -- % 1-15, 18, 20, 21-22, 24, 28...
-local stage = obj:extend{
-
-}
+local stage = obj:extend{}
 function stage:init()
  self.objects = {}
  self.uiobjects = {}

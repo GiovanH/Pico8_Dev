@@ -236,7 +236,7 @@ function bbox:init(origin, size)
  self.corner.x, self.corner.y,
  size:unpack()
 end
-function bbox.pack(x, y, w, h) return bbox(vec(x, y), vec(w, h)) end
+function bbox.fromxywh(x, y, w, h) return bbox(vec(x, y), vec(w, h)) end
 function bbox.pack(x0, y0, x1, y1)
  local o = vec(x0, y0)
  return bbox(o, vec(x1, y1)-o)
