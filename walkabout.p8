@@ -14,7 +14,7 @@ __lua__
 
 -- global vars
 local o_player
-local debug = (stat(6) == 'debug')
+local debug = true -- (stat(6) == 'debug')
 
 -- game state flags
 local speedshoes = debug
@@ -88,6 +88,16 @@ function closure(fn, ...)
  return (function() fn(unpack(vars)) end)
 end
 
+-- returns a table with all elements in tbl for which
+-- criteria returns a truthy value
+function filter(tbl, criteria)
+ local matches = {}
+ foreach(tbl, function(obj)
+   if (criteria(obj)) add(matches, obj)
+  end)
+ return matches
+end
+
 -- reset with one transparent color
 function paltt(t)
  palt()
@@ -100,7 +110,7 @@ end
 function rndr(a, b) return rnd(b - a) + a end
 
 -- random int [0, n)
-function rndi(n) return flr(rnd(n)) end
+-- function rndi(n) return flr(rnd(n)) end
 
 --- sort list by keyfunc
 function sort(list, keyfunc)
@@ -174,7 +184,7 @@ function vec:init(x, y)
  x or 0, y or x or 0
 end
 function vec8(x, y) return vec(x, y)*8 end
-local vec_spritesize = vec(8, 8)
+local vec_8_8 = vec(8, 8)
 local vec_16_16 = vec(16, 16)
 local vec_oneone = vec(1, 1)
 local vec_twotwo = vec(2, 2)
@@ -311,8 +321,9 @@ function entity:destroy() self._doomed = true end
 -- tcol: color # to mark as transparent
 -- z_is_y: auto set z to pos.y
 local actor = entity:extend{
- size = vec_spritesize,
+ size = vec_8_8,
  anchor = vec_zero,
+ offset = vec_zero,
  anim = nil,
  frame_len = 1,
  flipx = false,
@@ -322,10 +333,13 @@ local actor = entity:extend{
  z_is_y = true,  -- domain: camera perspective
 }
 function actor:init(pos, spr_, size, kwargs)
+ entity.init(self)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
- self.anchor = chainmap('anchor', kwargs, self)
- self._apos = self.pos:__add(self.anchor)
+ for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
+  self[prop] = chainmap(prop, kwargs, self)
+ end
+ self._apos = self.pos + self.anchor + self.offset
 end
 function actor:rel_anchor(x, y)
  self.anchor = vec(self.size.x*x, self.size.y*y)
@@ -339,7 +353,7 @@ end
 --  end
 -- end
 function actor:update()
- self._apos = self.pos:__add(self.anchor)
+ self._apos = self.pos + self.anchor + self.offset
  if (self.z_is_y) self.z = self.pos.y
  entity.update(self)
 end
@@ -670,6 +684,7 @@ function vec16(x, y) return vec(x, y)*16 end
 
 -- dialog box
 -- based on work by rustybailey
+local facemap_npcspr_off = {d=0, u=2, l=4, r=4}
 
 local dialoger = entity:extend{
  z=2,
@@ -973,7 +988,7 @@ function t_sign:interact(player, lines)
   end
  end
  dialoger:enqueue('',{callback=function() self.istalking = false end})
- self.talkedto += 1
+ if (self.talkedto != nil) self.talkedto += 1
 end
 
 local chest_data = {}
@@ -989,6 +1004,9 @@ function t_chest:init(id, pos, ispr, isize, itcol)
  t_sign.init(self, pos, 003, vec_16_16)
  self.id = id
  chest_data[self.id] = chest_data[id] or false
+ for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
+  self[prop] = chainmap(prop, kwargs, self)
+ end
  self.ispr = ispr
  self.isize = isize
  self.itcol = itcol
@@ -1147,14 +1165,12 @@ function newportal(pos, dest, deststate)
    sfx(001)
    self.stage:schedule(16, function()
      -- new room after animation
-     if deststate then
-      dest(deststate.pos)
-      p.facing = deststate.facing
-     else
-      dest()  -- let room decide position
-     end
-     o_player.cooldown = 5
-     cur_room:update()  -- align camera
+     change_room(self.dest)
+ --     next_room:schedule(0, function()
+ --       o_player.pos = deststate.pos or o_player.pos
+ --       o_player.facing = deststate.facing or o_player.facing
+ -- o_player.cooldown = 5
+ --      end)
     end)
   end
  end
@@ -1168,18 +1184,13 @@ function t_trigger:init(pos, size, dest, deststate)
 end
 function t_trigger:hittrigger(p)
  if (p.justtriggered) return
- if self.deststate then
-  self.dest(self.deststate.pos)
-  o_player.facing = self.deststate.facing
- else
-  self.dest()  -- let room decide position
- end
- o_player.cooldown = 1
- cur_room:update()  -- align camera
+ change_room(self.dest, self.deststate)
+-- cur_room:update()  -- align camera
 end
 
 local t_player = mob:extend{
  ismoving = false,
+ dynamic = true,
  facing = 'd',
  spr0 = 64,
  anchor = vec(-8, -24),
@@ -1247,30 +1258,23 @@ function t_player:tryinteract()
  -- passive triggers
  local stillintrigger = false
  for _,obj in pairs(self.stage.objects) do
-  if (self.hbox:overlaps(obj.hbox) and obj.hittrigger) then
+  if (obj.hittrigger and self.hbox:overlaps(obj.hbox)) then
    stillintrigger = true
    obj:hittrigger(self)
-   -- if (not self.justtriggered) then
-   --  -- self just got destroyed so
-   --  -- this doesn't do anything:
-   --  self.justtriggered = true
-   -- -- what actually matters is
-   -- -- the init setting here
-   -- end
    break
   end
  end
  self.justtriggered = stillintrigger
  -- try interact
- local facemap = {d=vec(0, 6),u=vec(0,-12),l=vec(-12,-6),r=vec(12,-6)}
  if btnp(4) then
-  local ibox = bbox(self.hbox.origin, vec(12, 12)):shift(facemap[self.facing])
-
+  local ibox = bbox(self.hbox.origin, vec_8_8):shift(facemap_move[self.facing]*8)
+  -- self.ibox = ibox
+  local interactable = filter(self.stage.objects, function(o) return o.interact end)
   function p_dist(object)
    return (not object.pos) and 0 or self.pos:__sub(object.pos):mag()
   end
-  for _,obj in pairs(sorted(self.stage.objects, p_dist)) do
-   if (ibox:overlaps(obj.hbox) and obj.interact) then
+  for _,obj in pairs(sorted(interactable, p_dist)) do
+   if ibox:overlaps(obj.hbox) then
     if (obj:interact(self) != false) then
      self.cooldown += 2
      break
@@ -1295,40 +1299,48 @@ function t_player:update()
 
  self.stage.camfocus = self.pos
  mob.update(self)
- self.hbox = self:get_hitbox()
 end
 
 function t_player:draw()
  self.flipx = (self.facing == 'l')
- local facemap = {d=0, u=2, l=4, r=4}
- self.spr = self.spr0 + facemap[self.facing]
+ self.spr = self.spr0 + facemap_npcspr_off[self.facing]
  if self.ismoving and self.stage.mclock % 8 < 4 then
-  self.anchor = vec(-8, -25)
+  self.offset = vec_zero
  else
-  self.anchor = vec(-8, -24)
+  self.offset = vec(0, -1)
  end
  mob.draw(self)
 -- if (debug and self.ibox) rect(mrconcatu(self.ibox, 10))
 end
 
 local room = stage:extend{
- camfocus = nil
 }
-function room:init(name, mx, my, mw, mh)
- self.map_origin = vec16(mx, my)
+function room:init(name)
+ mx, my, mw, mh = self.mapbox:unpack()
+ self.map_origin = vec8(mx, my)*2
  self.box_map = bbox.fromxywh(0, 0, mw, mh)
  self.box_cells = self.box_map*16
  self.box_px = self.box_cells*8
 
- self.camfocus = self.box_px:center()
- stage.init(room)
  self:add(choicer)
+ self.camfocus = self.startpos
+ stage.init(self)
+ -- stage.init(room)
+ self.o_player = self:add(t_player(self.startpos))
  self:add(dialoger)
+ local name = self.name
  local nameplate = entity({z=0})
  function nameplate:drawui()
   prints(name, 0, 122)
  end
  self:add(nameplate)
+end
+function room:update()
+ o_player = self.o_player
+ stage.update(self)
+end
+function room:onswitchto()
+ music(self.music)
 end
 function room:draw()
  local map_x, map_y = self.map_origin:unpack()
@@ -1391,69 +1403,90 @@ end
 -->8
 --rooms
 
+local cur_room, next_room
+
+local room_cache = {}
+function change_room(nroom, deststate)
+ if (not room_cache[nroom]) room_cache[nroom] = nroom()
+ next_room = room_cache[nroom]
+
+ if o_player then -- might be first init
+   deststate = deststate or {}
+   if (deststate.rel_pos) deststate.pos = p.pos + deststate.rel_pos
+   next_room:schedule(0, function()
+     o_player.pos = chainmap('pos', deststate, o_player)
+     o_player.facing = chainmap('facing', deststate, o_player)
+    end)
+   o_player.cooldown = 1
+ end
+end
+function change_room_reset(nroom, ...)
+ room_cache[nroom] = nil
+ change_room(nroom, ...)
+end
+
+
 local paltab_prospitchest = {[5]=7,[1]=6}
 local paltab_dersite = {[14]=0, [7]=0, [0]=7}
 
-cur_room = nil
+function prettify_map()
+ local tiletable = {
+  [036]= 052,
+  [002]= 018
+ }
+ for x = 0,128 do
+  for y=0,64 do
+   local state=mget(x, y)
+   if (tiletable[state]) mset(x,y,tiletable[state])
+  end
+ end
+end
 
-function room_complab()
- music(00)
- local center = vec16(8, 8.25)
- cur_room = room("complab", 0, 0, 2, 2)
- o_player = cur_room:add(t_player(center))
+local r_complab = room:extend{
+ startpos = vec16(8, 8.25),
+ mapbox = bbox.fromxywh(0, 0, 2, 2),
+ name="complab",
+ music=00
+}
+function r_complab:init(v)
+  room.init(self, v)
 
- local o_computer1 = cur_room:add(t_sign(vec16(1.5, 0.5), 010, vec_16_16))
- o_computer1.lines = "two white lines of text are blown up to fill the entire screen.\rit's so huge you can read it from across the room.\ri wonder what it says."
+ self:add(t_sign(vec16(1.5, 0.5), 010, vec_16_16)).lines = "two white lines of text are blown up to fill the entire screen.\rit's so huge you can read it from across the room.\ri wonder what it says."
 
- local o_computer2 = cur_room:add(t_sign(vec8(11, 1), 112, vec8(2, 1), {bsize=vec_16_16}))
- o_computer2.lines = "looks like someone was planning a fundraising campaign for a video game.\rtoo bad they're just a troll."
+ self:add(t_sign(vec8(11, 1), 112, vec8(2, 1), {bsize=vec_16_16})).lines = "looks like someone was planning a fundraising campaign for a video game.\rtoo bad they're just a troll."
 
- local o_computer3 = cur_room:add(t_sign(vec8(19, 1), 116, vec_spritesize, {
-    anchor=vec(4, 1), bsize=vec_16_16}))
- o_computer3.lines = "it's an off-ice computer.\ryou can tell because someone is running troll powerpoint. it ticked past the last slide though."
- o_computer3.tcol = 15
+ self:add(t_sign(vec8(19, 1), 116, vec_8_8, {
+    anchor=vec(4, 1), bsize=vec_16_16, tcol=15})).lines = "it's an off-ice computer.\ryou can tell because someone is running troll powerpoint. it ticked past the last slide though."
 
- local o_computer4 = cur_room:add(t_sign(vec8(27, 1), 010, vec8(2, 1), {
-    bsize=vec_16_16}))
- o_computer4.paltab = {[6]=3}
- o_computer4.lines = "wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally.\rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
+ self:add(t_sign(vec8(27, 1), 010, vec8(2, 1), {
+    bsize=vec_16_16, paltab={[6]=3}})).lines = "wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally.\rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
  -- o_computer4:addline(
  --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
 
- local o_teapot = cur_room:add(t_sign(vec16(15, 8), 050, vec8(2, 1)))
- o_teapot.tcol = 012
- o_teapot.lines = "it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.\rthe sugar is arranged so as to be copyrightable intellectual property."
+ self:add(t_sign(vec16(15, 8), 050, vec8(2, 1), {tcol=012})).lines = "it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.\rthe sugar is arranged so as to be copyrightable intellectual property."
 
- local o_chest = cur_room:add(t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone))
- o_chest.getlines = {
+ self:add(t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone)).getlines = {
   "you got a fistfull of boondollars!\rit's important that sburb give these out to players for accomplishing game tasks, or else they wouldn't be motivated to play the game.\ralthough \"playing the game\" here pretty much means staying alive and ensuring you're not responsible for the annihilation of your species. you've gotta give people little wins."}
 
  -- todo polish dialogue
- local o_chest = cur_room:add(t_chest('clabfaygo',vec8(23, 20), 043, vec(1, 2)))
- o_chest.getlines = "you got a faygo! a fun drink for fun people.\rit tastes like red pop."
+ self:add(t_chest('clabfaygo',vec8(23, 20), 043, vec(1, 2))).getlines = "you got a faygo! a fun drink for fun people.\rit tastes like red pop."
  
+  self:add(t_sign(vec(172, 194), 034, vec8(2, 1))).lines = "these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."
 
- local o_cards = cur_room:add(t_sign(vec(172, 194), 034, vec8(2, 1)))
- o_cards.lines = "these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."
+ self:add(t_sign(vec(142, 203), 032, vec_16_16)).lines = "it's a stray fiduspawn host plush.\ronce hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."
 
- local o_plush = cur_room:add(t_sign(vec(142, 203), 032, vec_16_16))
- o_plush.lines = "it's a stray fiduspawn host plush.\ronce hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."
+ self:add(t_sign(vec8(27, 28), 237, vec8(1, 2), {
+    bsize=vec_8_8,
+    anchor=vec8(0,-1),
+    tcol=14,
+    obstructs=true
+   })).lines = "there's suggestion in the trash. it just says the word \"alternia\".\ryou're glad that didn't get chosen. that would have been silly."
 
- local o_trash = cur_room:add(t_sign(vec8(27, 28), 237, vec8(1, 2), {
-    bsize=vec_spritesize,
-    anchor=vec8(0,-1)
-   }))
- o_trash.tcol = 14
- o_trash.obstructs = true
- o_trash.lines = {"there's suggestion in the trash. it just says the word \"alternia\".\ryou're glad that didn't get chosen. that would have been silly."}
+ self:add(t_sign(vec(195, 78), 110, vec8(2, 1))).lines = "someone has tied a noose around this plush dragon and left it lying on the floor.\rlooking around, you don't see anything nearby you could hang a rope from.\ror even, like, a chair to stand from."
 
- local o_scalemate = cur_room:add(t_sign(vec(195, 78), 110, vec8(2, 1)))
- o_scalemate.lines = "someone has tied a noose around this plush dragon and left it lying on the floor.\rlooking around, you don't see anything nearby you could hang a rope from.\ror even, like, a chair to stand from."
+ self:add(t_sign(vec16(0, 11), false, vec16(5, 5))).lines = "this corner of the room feels strangely empty and unoccupied.\ryes, both."
 
- local o_corner = cur_room:add(t_sign(vec16(0, 11), false, vec16(5, 5)))
- o_corner.lines = "this corner of the room feels strangely empty and unoccupied.\ryes, both."
-
- local o_karkat = cur_room:add(t_npc(vec(64, 64), 070))
+ local o_karkat = self:add(t_npc(vec(64, 64), 070))
  o_karkat.color = 5
  function o_karkat:interact(player)
   local choices = {
@@ -1466,23 +1499,25 @@ function room_complab()
   t_npc.interact(self, player, choices)
  end
 
- cur_room:add(newportal(center, room_t))
- cur_room:update()
-
+ self:add(newportal(self.startpos, r_tee))
 end
 
-function room_t(v)
- music(02)
- cur_room = room("teerezi", 2, 0, 1, 1)
- o_player = cur_room:add(t_player(v or vec8(3, 12)))
+local r_tee = room:extend{
+ startpos = vec8(3, 12),
+ mapbox = bbox.fromxywh(2, 0, 1, 1),
+ name="teerezi",
+ music=02
+}
+function r_tee:init(v)
+  room.init(self, v)
 
- o_chest = cur_room:add(
+ o_chest = self:add(
   t_chest('scalemate',vec8(5, 5), 142, vec_twotwo, 15)
  )
  o_chest.getlines = "you got another scalemate!\rthere was also a rope in the chest. you decide to leave it and take the scalemate far away."
  o_chest.emptylines = "there was also a rope in the chest. you decide to leave it and take the scalemate far away."
 
- o_scalehang = cur_room:add(actor(vec16(5, 3.5), 142, vec_16_16, {
+ o_scalehang = self:add(actor(vec16(5, 3.5), 142, vec_16_16, {
     anchor = vec8(0,-5)
    }))
  o_scalehang.tcol = 15
@@ -1494,7 +1529,7 @@ function room_t(v)
  end
 
  -- todo write dialogue
- o_terezi = cur_room:add(t_npc(vec8(8, 7), 128))
+ o_terezi = self:add(t_npc(vec8(8, 7), 128))
  o_terezi.color = 3
  function o_terezi:interact(player)
   local choices = {
@@ -1506,28 +1541,32 @@ function room_t(v)
   t_npc.interact(self, player, choices)
  end
 
- cur_room:add(newportal(vec(24, 90), room_complab))
- cur_room:add(newportal(vec(104, 90), room_lab))
+ self:add(newportal(vec(24, 90), r_complab))
+ self:add(newportal(vec(104, 90), r_lab))
 
 end
 
-function room_lab(v)
- music(02)
- cur_room = room("scilab", 6, 0, 1, 2)
- o_player = cur_room:add(t_player(v or vec(64, 90), {facing='r'}))
+local r_lab = room:extend{
+ startpos = vec(64, 90),
+ mapbox = bbox.fromxywh(6, 0, 1, 2),
+ name="scilab",
+ music=02
+}
+function r_lab:init(v)
+  room.init(self, v)
 
  for y = 0, 3 do
   for x = 0, 1 do
-   if (y == 2 and x == 0) goto continue
-   o_cap = cur_room:add(actor(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3), {
-      anchor=vec8(0,-2)
+   if (y != 2 and x != 0) then
+   o_cap = self:add(actor(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3), {
+      anchor=vec8(0,-2),
+      tcol=10
      }))
-   o_cap.tcol = 10
-   ::continue::
+   end
   end
  end
 
- o_switch_dial = cur_room:add(t_sign(vec8(7.5, 2.5), 125, vec_spritesize))
+ o_switch_dial = self:add(t_sign(vec8(7.5, 2.5), 125, vec_8_8))
  o_switch_dial.flipx = state_flags['frog_flipped']
  function o_switch_dial:interact(player)
   if (player.cooldown > 0) return false
@@ -1547,14 +1586,14 @@ function room_lab(v)
   dialoger:enqueue("there is a switch here with a frog. flip it?", {callback=promptswitch}
   )
  end
- o_switch_frog = cur_room:add(mob(vec8(7, 1.5), 126, vec8(2, 1)))
+ o_switch_frog = self:add(mob(vec8(7, 1.5), 126, vec8(2, 1)))
 
  o_frog = t_sign(vec8(12, 4), 174, vec_16_16, {
    bsize=vec8(2, 1),
-   anchor=vec8(0,-1)
+   anchor=vec8(0,-1),
+   flipx=true,
+   obstructs=true
   })
- o_frog.flipx = true
- o_frog.obstructs = true
  function o_frog:interact(player)
   o_frog.lines = {
    "hi. i'm the right frog.\ri'm more secret than the other frog.",
@@ -1570,27 +1609,32 @@ function room_lab(v)
   end
 
  end
- if (state_flags['frog_flipped']) cur_room:add(o_frog)
+ if (state_flags['frog_flipped']) self:add(o_frog)
 
- o_chest = cur_room:add(t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10))
+ local o_chest = self:add(t_chest('sciencetank',vec16(2, 10), 076, vec(2, 3), 10))
  o_chest.getlines = "it's one of those science tube things.  a tank, for cloning, or monsters, or ghosts. or whatver science comes up, really.\rno matter what your genre, if you've got something significant to do and really want to make it official, you've gotta have a room full of these bad boys around."
  o_chest.emptylines = "someone has carved a hole into the floor to give this chest space for an extra-tall item."
 
- cur_room:add(newportal(vec(64, 84), room_t, {
+ self:add(newportal(vec(64, 84), r_tee, {
     facing='d',
     pos=vec(104, 91)
    }))
 
- cur_room:add(t_trigger(vec(124, 192), vec8(.5, 4), room_hallway))
+ self:add(t_trigger(vec(124, 192), vec8(.5, 4), r_hallway))
 
 end
 
-function room_hallway(v)
- music(-1)
- cur_room = room("hallway", 2, 1, 1, 1)
- o_player = cur_room:add(t_player(v or vec(14, 72)))
 
- local greydoor = cur_room:add(t_sign(vec8(7, 4), 030, vec8(2, 3)))
+local r_hallway = room:extend{
+ startpos = vec(14, 72),
+ mapbox = bbox.fromxywh(2, 1, 1, 1),
+ name="hallway",
+ music=-1
+}
+function r_hallway:init(v)
+  room.init(self, v)
+
+ local greydoor = self:add(t_sign(vec8(7, 4), 030, vec8(2, 3)))
  greydoor.tcol = 1
  function greydoor:interact(player)
   if self.talkedto < 1 then
@@ -1601,23 +1645,25 @@ function room_hallway(v)
   t_sign.interact(self, player)
  end
 
- cur_room:add(t_trigger(vec(0, 56), vec8(.5, 4), room_lab, {
+ self:add(t_trigger(vec(0, 56), vec8(.5, 4), r_lab, {
     facing='l',
     pos=vec(115, 208)
    }))
 
- cur_room:add(t_trigger(vec8(15.5, 7), vec8(.5, 4), room_stair))
+ self:add(t_trigger(vec8(15.5, 7), vec8(.5, 4), r_stair))
 
 end
 
-function room_stair(v)
+local r_stair = room:extend{
+ startpos = vec(18, 52),
+ mapbox = bbox.fromxywh(7, 0, 1, 2),
+ name="stairway",
+ music=04
+}
+function r_stair:init(v)
+  room.init(self, v)
 
- music(04)
- cur_room = room("stairway", 7, 0, 1, 2)
- o_player = cur_room:add(t_player(v or vec(18, 52)))
- o_player.facing = 'r'
-
- local o_trigback = cur_room:add(t_trigger(vec(0, 32), vec(4, 32), room_hallway, {
+ local o_trigback = self:add(t_trigger(vec(0, 32), vec(4, 32), r_hallway, {
     facing='l',
     pos=vec8(13, 9)
    }))
@@ -1626,20 +1672,19 @@ function room_stair(v)
   t_trigger.hittrigger(self, p)
  end
 
- local o_plush = cur_room:add(t_sign(vec(80, 141), 032, vec_16_16))
- o_plush.lines = "he must be lost.\rfortunately his owner can safely walk down here and retrieve him."
+ self:add(t_sign(vec(80, 141), 032, vec_16_16)).lines = "he must be lost.\rfortunately his owner can safely walk down here and retrieve him."
 
- local o_chest = cur_room:add(t_chest('stair1',vec16(5, 2), 003, vec_twotwo))
+ local o_chest = self:add(t_chest('stair1',vec16(5, 2), 003, vec_twotwo))
  o_chest.getlines = {"you got a chest! the perfect container to store things in.","since only protagonists can open them, it's very secure."}
  o_chest.emptylines = "it was only big enough to hold one chest."
 
- local o_chest2 = cur_room:add(t_chest('stair2',vec16(2, 2), 206, vec_twotwo, 12))
- o_chest2.getlines = "you got minihoof!\rsmall enough to sit on your desk, horse enough to be entirely inconvenient to care for.\rtotally worth it though."
+ self:add(t_chest('stair2',vec16(2, 2), 206, vec_twotwo, 12)).getlines = "you got minihoof!\rsmall enough to sit on your desk, horse enough to be entirely inconvenient to care for.\rtotally worth it though."
 
- local o_stair_rail = cur_room:add(mob(vec(65, 80), nil, vec(15, 1)))
- o_stair_rail.obstructs = true
+ local o_stair_rail = self:add(mob(vec(65, 80), nil, vec(15, 1),{
+  obstructs=true
+  }))
 
- local o_stair = cur_room:add(mob(vec8(6.5, 10), nil, vec8(3, 5)))
+ local o_stair = self:add(mob(vec8(6.5, 10), nil, vec8(3, 5)))
  function o_stair:hittrigger(player)
   local speed = 2
   for x=1,speed do
@@ -1651,8 +1696,9 @@ function room_stair(v)
   end
  end
 
- local o_gio = cur_room:add(t_npc(vec(33, 206), 064))
- o_gio.paltab = {[7]=8, [0]=8, [14]=0, [13]=0}
+ local o_gio = self:add(t_npc(vec(33, 206), 064, {
+  paltab={[7]=8, [0]=8, [14]=0, [13]=0}
+  }))
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
  function o_gio:interact(player)
   local choices = {
@@ -1667,7 +1713,7 @@ function room_stair(v)
        dialoger:enqueue("he gave you an ❎ button. in addition to the rest.", {callback=function()
           focus:push'anim'
           self.facing = 'd'
-          cur_room:schedule(10, function()
+          self.stage:schedule(10, function()
             sfx(005)
             local face = cur_room:add(sprparticle(
               179, vec_oneone,
@@ -1676,7 +1722,7 @@ function room_stair(v)
              ))
             face.tcol = 14
            end)
-          cur_room:schedule(60, function() focus:pop'anim' end)
+          self.stage:schedule(60, function() focus:pop'anim' end)
          end})  -- end wink anim
       end  -- end nospeedshoes else
      end  -- end man func
@@ -1697,48 +1743,47 @@ function room_stair(v)
   t_npc.update(self)
  end
 
- local o_vue = cur_room:add(t_sign(vec8(10, 24), 122, vec8(2, 1), {
-    anchor=vec8(0, -1)
+ local o_vue = self:add(t_sign(vec8(10, 24), 122, vec8(2, 1), {
+    anchor=vec8(0, -1),
+    tcol=14
    }))
- o_vue.tcol = 14
  o_vue.lines = "it looks like he has been trying to copy media from the past into the present.\ra fool's errand."
 
- local o_p8cart = cur_room:add(t_sign(vec8(8, 23), 183, vec_spritesize))
+ local o_p8cart = self:add(t_sign(vec8(8, 23), 183, vec_8_8))
  o_p8cart.lines = "it's a pico-8 game cartridge. these things have a maximum capacity of about 90% the size of just the first animated panel of mspa, so programming one can be a royal headache.\rbut sometimes you've got to take off your archivist's stovetop hat and toil for a minute\runder the pulled-back baseball cap of the secrets' sommelier.\ryou think you'll stick with godot instead."
 
- local o_great = cur_room:add(t_button(vec16(1, 6), false, vec_16_16))
- o_great.interact = function()
-  room_turbine(vec(24, 122))
-  o_player.facing = 'u'
- end
+ local o_great = self:add(t_button(vec16(1, 6), false, vec_16_16))
+ o_great.interact = closure(change_room, r_turbine, {pos=vec(24, 122), facing='u'})
  if (state_flags['leftstair'] and not state_flags['knowsgreat']) o_great.label = "GREAT"
  o_great.draw = drawgreat
 
- local o_horsehole = cur_room:add(t_sign(vec16(6, 7), false, vec8(1, 2)))
+ local o_horsehole = self:add(t_sign(vec16(6, 7), false, vec8(1, 2)))
  o_horsehole.lines = "through a small hole in the wall you see a passage that leads deep into the [???]. it's too small for you to enter.\ryou hear a distant winney."
 
 end
 
-function room_turbine(v)
- state_flags['knowsgreat'] = true
- music(00)
- cur_room = room("ventway", 3, 0, 2,1)
- o_player = cur_room:add(t_player(v or vec(24, 112)))
+local r_turbine = room:extend{
+ startpos = vec(24, 112),
+ mapbox = bbox.fromxywh(3, 0, 2, 1),
+ name="ventway",
+ music=00
+}
+function r_turbine:init(v)
+  room.init(self, v)
 
- o_player.bsize = vec(14, 10)  -- feel cramped
- o_player.hbox_offset = vec(-7, -10)
+  -- todo check this business
+ self.o_player.bsize = vec(14, 10)  -- feel cramped
+ self.o_player.hbox_offset = vec(-7, -10)
 
- local o_great = cur_room:add(t_button(vec16(12, 1), 234, vec_16_16))
- o_great.tcol = 15
+ local o_great = self:add(t_button(vec16(12, 1), 234, vec_16_16, {tcol=15}))
 
  if (not state_flags['frog_flipped']) then
-  local o_chest = cur_room:add(t_chest('frog',vec8(20, 11), 174, vec_twotwo))
+  local o_chest = self:add(t_chest('frog',vec8(20, 11), 174, vec_twotwo))
   o_chest.getlines = "you found a contraband amphibian!\rhe says something about being hidden better than the other frog.\ryou pet the frog."
   o_chest.emptylines = "you have left this chest so much the poorer."
  end
 
- local o_hole = cur_room:add(mob(vec16(10, 3), 008, vec16(1, 1)))
- o_hole.tcol = 15
+ local o_hole = self:add(mob(vec16(10, 3), 008, vec16(1, 1), {tcol=15}))
  function o_hole:update()
   if state_flags['holefilled'] then
    local tiles = self.hbox:maptiles(self.stage.map_origin)
@@ -1787,7 +1832,7 @@ function room_turbine(v)
   "20, 12, 2"
  } do
   local x, y, len = unpack(split(fg))
-  local o_fg_rail = cur_room:add(mob(
+  local o_fg_rail = self:add(mob(
     vec8(x, y+.1), 117, vec8(len, 1),
     {anchor=vec8(0,-1.1)}))
   function o_fg_rail:draw()
@@ -1801,47 +1846,46 @@ function room_turbine(v)
 
  end
 
- local o_andrew = cur_room:add(t_sign(vec8(14, 11), 140, vec8(2, 3)))
+ local o_andrew = self:add(t_sign(vec8(14, 11), 140, vec8(2, 3)))
  npcify(o_andrew)
  o_andrew.tcol = 14
 
- local o_cantreach = cur_room:add(t_sign(vec8(19, 11), false, vec_spritesize))
- o_cantreach.lines = "try as you might, you can't cross the gap.\rprobably would have been a disappointment, honestly."
+ self:add(t_sign(vec8(19, 11), false, vec_8_8)).lines = "try as you might, you can't cross the gap.\rprobably would have been a disappointment, honestly."
 
- cur_room:add(t_trigger(vec8(2, 15.5), vec8(2, .5), room_stair, {
+ self:add(t_trigger(vec8(2, 15.5), vec8(2, .5), r_stair, {
     facing='d',
     pos=vec(24, 121)
    }))
- cur_room:add(t_trigger(vec8(14, 0), vec8(2, .5), room_ocean))
- cur_room:add(t_trigger(vec8(31.5,4), vec8(.5, 2), room_roof))
- cur_room:add(t_trigger(vec8(31.5,10), vec8(.5, 2), room_roof,{
+ self:add(t_trigger(vec8(14, 0), vec8(2, .5), r_ocean))
+ self:add(t_trigger(vec8(31.5,4), vec8(.5, 2), r_johnroof))
+ self:add(t_trigger(vec8(31.5,10), vec8(.5, 2), r_johnroof,{
     facing='r',
     pos=vec(16, 127)
    }))
- cur_room:update()
 end
 
-function room_roof(v)
- music(01)
- cur_room = room("john's roof", 5, 0, 1, 1)
- o_player = cur_room:add(t_player(v or vec(16, 98)))
- o_player.facing = 'r'
+local r_johnroof = room:extend{
+ startpos = vec(16, 98),
+ mapbox = bbox.fromxywh(5, 0, 1, 1),
+ name="john's roof",
+ music=01
+}
+function r_johnroof:init(v)
+  room.init(self, v)
 
- local o_stair_rail = cur_room:add(mob(vec(77, 48), nil, vec(3, 64)))
+ local o_stair_rail = self:add(mob(vec(77, 48), nil, vec(3, 64)))
  o_stair_rail.obstructs = true
 
- local o_chest = cur_room:add(t_chest('pogo',vec8(7, 6), 078, vec_twotwo))
- o_chest.paltab = paltab_prospitchest
+ local o_chest = self:add(t_chest('pogo',vec8(7, 6), 078, vec_twotwo, 3, {
+    paltab = paltab_prospitchest
+  }))
  o_chest.ipaltab = {[11]=12, [0]=6}
- o_chest.itcol = 3
  o_chest.getlines = "you got a rare off-color slimer!\ran artifact of a simpler time."
 
- local o_chest = cur_room:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone))
+ local o_chest = self:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone))
  o_chest.getlines = "it's a glass of... what is that, faygo cut with limoncello?\ra drink for the direst of circumstances."
 
- local o_pogo = cur_room:add(t_sign(vec8(12, 9), 078, vec_16_16, {bsize=vec_spritesize}))
- o_pogo.obstructs = true
- o_pogo.tcol = 3
+ local o_pogo = self:add(t_sign(vec8(12, 9), 078, vec_16_16, {bsize=vec_8_8, obstructs=true, tcol=3}))
  o_pogo.lines = {
   "thanks to the miracle of digital technology, the pogo ride has been effortlessly preserved to the exact specifications of the designer, a feat unheard of in any previous era.\rbut it doesn't work anymore.",
   function()
@@ -1858,9 +1902,9 @@ function room_roof(v)
  o_pogo:update()
 
  if state_flags['faygocelloshown'] then
-  local o_lamppost = cur_room:add(t_sign(vec8(6, 9), 078, vec_spritesize))
-  o_lamppost.obstructs = true
-  o_lamppost.tcol = 14
+  local o_lamppost = self:add(t_sign(vec8(6, 9), 078, vec_8_8, {
+    obstructs=true, tcol=14
+    }))
   o_lamppost.lines = {
    function() sfx(007) end,
    "it's the \falamppost\f7.\rquit the game?",
@@ -1884,39 +1928,40 @@ function room_roof(v)
    line(mrconcatu(line_, 0))
    line(mrconcatu(line_:shift(vec_x1), 5))
 
-   if (self.stage.mclock % 16 < 4 and rndi(6) == 0) self.flicker = true
+   if (self.stage.mclock % 16 < 4 and rnd() < 0.16) self.flicker = true
    if self.flicker then
     pset(self.pos.x+3, self.pos.y-28, 9)
-    if (rndi(2) != 0) self.flicker = false
+    if (rnd() < .5) self.flicker = false
    end
   -- mob.drawdebug(self)
   end
  end
 
- cur_room:add(t_trigger(vec8(1, 11), vec8(0.5, 6), room_turbine, {
+ self:add(t_trigger(vec8(1, 11), vec8(0.5, 6), r_turbine, {
     facing='l',
     pos=vec8(30, 6)
    }))
 end
 
-function room_ocean(v)
+local r_ocean = room:extend{
+ startpos = vec(104, 40),
+ mapbox = bbox.fromxywh(5, 1, 1, 1),
+ name="ocean roof",
+ music=03
+}
+function r_ocean:init(v)
+  room.init(self, v)
 
- music(03)
- cur_room = room("ocean roof", 5, 1, 1, 1)
- o_player = cur_room:add(t_player(v or vec(104, 40)))
+ self.paltab = {[3]=5, [11]=4}
 
- cur_room.paltab = {[3]=5, [11]=4}
+ self:add(t_button(vec16(6, 1), 234, vec_16_16, {tcol=15}))
 
- local o_great = cur_room:add(t_button(vec16(6, 1), 234, vec_16_16))
- o_great.tcol = 15
-
- o_great.interact = closure(room_turbine, vec(121, 16))
+ o_great.interact = closure(r_turbine, vec(121, 16))
  o_great.draw = drawgreat
 
- local o_chest = cur_room:add(t_chest('oceanr',vec8(11, 9), 181, vec(2, 1)))
- o_chest.getlines = "you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."
+ self:add(t_chest('oceanr',vec8(11, 9), 181, vec(2, 1))).getlines = "you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."
 
- local o_kanaya = cur_room:add(t_npc(vec8(8, 9), 134))
+ local o_kanaya = self:add(t_npc(vec8(8, 9), 134))
  o_kanaya.color = 3
  o_kanaya.blip = 006
  function o_kanaya:interact(player)
@@ -1932,19 +1977,18 @@ function room_ocean(v)
   t_npc.interact(self, player, choices)
  end
 
- local o_stair = cur_room:add(t_button(vec16(1, 4), false, vec_16_16))
- o_stair.interact = function()
-  room_chess()
- end
- o_stair.obstructs = true
+ local o_stair = self:add(t_button(vec16(1, 4), false, vec_16_16, {
+  obstructs=true
+  }))
+ o_stair.interact = closure(change_room, r_chess)
 
- function cur_room:update()
+ function self:update()
   if self.mclock % 120 == 0 then
    local fish = sprparticle(180, vec_oneone,
     vec8(rndr(9, 11), 2), vec(-3, -4), vec(0, 0.4), 18, nil, 16)
    fish.tcol = 2
    function fish:update()
-    self.hbox = bbox(self.pos, vec_spritesize)
+    self.hbox = bbox(self.pos, vec_8_8)
     particle.update(self)
    end
    function fish:interact(player)
@@ -1960,33 +2004,23 @@ function room_ocean(v)
   room.update(self)
  end
 
- local o_decorator = cur_room:add(entity())
+ local o_decorator = self:add(entity())
  function o_decorator:draw()
   rect(8, 24, 119, 87,4)
  end
 
- sfx(002)
+ -- sfx(002)
 
 end
 
-function prettify_map()
- local tiletable = {
-  [036]= 052,
-  [002]= 018
- }
- for x = 0,128 do
-  for y=0,64 do
-   local state=mget(x, y)
-   if (tiletable[state]) mset(x,y,tiletable[state])
-  end
- end
-end
-
-function room_chess(v)
-
- music(05)
- cur_room = room("castle board", 3, 1, 2, 1)
- o_player = cur_room:add(t_player(v or vec8(30, 10)))
+local r_chess = room:extend{
+ startpos = vec8(30, 10),
+ mapbox = bbox.fromxywh(3, 1, 2, 1),
+ name="castle board",
+ music=05
+}
+function r_chess:init(v)
+  room.init(self, v)
 
  function drawpillar(self)
   local spx, spy = self._apos:unpack()
@@ -2001,27 +2035,26 @@ function room_chess(v)
  end
 
  for x in all{3, 11, 20, 28} do
-  local o_pillar = cur_room:add(mob(vec8(x,14), 120, vec_spritesize))
+  local o_pillar = self:add(mob(vec8(x,14), 120, vec_8_8))
   o_pillar.draw = drawpillar
   o_pillar.obstructs = true
 
  end
 
  -- Todo polish dialog
- local o_stalemate_w = cur_room:add(t_sign(vec8(7, 12), 066, vec8(2, 3)))
+ local o_stalemate_w = self:add(t_sign(vec8(7, 12), 066, vec8(2, 3)))
  npcify(o_stalemate_w)
  o_stalemate_w.lines = "it's a north-going prospitian.\rit looks like they're stuck.\rthey look enraged."
 
- local o_stalemate_b = cur_room:add(t_sign(vec8(7, 11), 064, vec8(2, 3)))
+ local o_stalemate_b = self:add(t_sign(vec8(7, 11), 064, vec8(2, 3)))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab=paltab_dersite
  o_stalemate_b.lines = "it's a south-going dersite.\rit looks like they're stuck.\rseems they've accepted it."
 
- local o_promoguy = cur_room:add(t_npc(vec8(12.5, 7), 064))
+ local o_promoguy = self:add(t_npc(vec8(12.5, 7), 064, {
+  facing='r', paltab=paltab_dersite, dynamic=true
+  }))
  o_promoguy.step = vec_x1
- o_promoguy.dynamic = true
- o_promoguy.facing = 'r'
- o_promoguy.paltab=paltab_dersite
  function o_promoguy:update()
   self.ismoving = not self.istalking
   if not self.istalking then
@@ -2037,24 +2070,24 @@ function room_chess(v)
   dialoger:enqueue('',{callback=function() self.facing = wasfacing end})
  end
 
- local o_palt_portal = cur_room:add(newportal(vec8(2, 9), room_complab))
+ local o_palt_portal = self:add(newportal(vec8(2, 9), r_complab))
  o_palt_portal.paltab = {[1]=7,[2]=10}
 
- local o_chest_tile = cur_room:add(t_chest('tilechest',vec8(5, 5), 008, vec_twotwo))
+ local o_chest_tile = self:add(t_chest('tilechest',vec8(5, 5), 008, vec_twotwo))
  o_chest_tile.paltab = paltab_prospitchest
  o_chest_tile.getlines = "you found a floor tile!\ryou are filled with relief at some semblance of linear progression."
 
- local o_chest_nendroid = cur_room:add(t_chest('nendroid',vec8(8, 5), 238, vec_twotwo))
+ local o_chest_nendroid = self:add(t_chest('nendroid',vec8(8, 5), 238, vec_twotwo))
  o_chest_nendroid.paltab = paltab_prospitchest
  o_chest_nendroid.itcol = 15
  o_chest_nendroid.getlines = "you found a homestuck nendroid!\rah. truly, you're living your best timeline."
 
- local o_chest_chaos = cur_room:add(t_chest('chaose',vec8(24, 13), 124, vec_oneone))
+ local o_chest_chaos = self:add(t_chest('chaose',vec8(24, 13), 124, vec_oneone))
  o_chest_chaos.paltab = paltab_prospitchest
  o_chest_chaos.getlines = "you found a chaos emerald! can you find them all?\r(you have already found them all)"
  o_chest_chaos.emptylines = "weird, there's room in here for like six or eight."
 
- local o_jade = cur_room:add(t_npc(vec8(23, 6), 192))
+ local o_jade = self:add(t_npc(vec8(23, 6), 192))
  o_jade.color = 11
  o_jade.bgcolor = 13
 
@@ -2072,22 +2105,12 @@ function room_chess(v)
   t_npc.interact(self, player, choices)
  end
 
- cur_room:add(t_trigger(vec8(31.5, 8), vec8(.5, 3), room_ocean, {
+ self:add(t_trigger(vec8(31.5, 8), vec8(.5, 3), r_ocean, {
     facing='r',
     pos=vec(39, 76)
    }))
- cur_room:update()
 
 end
-
--- function room_living(v)
-
---  music(01)
---  cur_room = room("livingroom", 1.5, 3, 1, 1)
---  o_player = cur_room:add(t_player(v or vec(16, 98)))
---  o_player.facing = 'r'
-
--- end
 
 local intro_keyspr = actor:extend{}
 function intro_keyspr:init(btnid, ...)
@@ -2192,11 +2215,11 @@ function _init()
  prettify_map()
  -- starting room
  if debug then
-  room_roof()
+  change_room(r_complab)
   focus:push'player'
  else
   cur_room = introscreen(90, function()
-    room_complab()
+    r_complab()
     focus:push'player'
     o_player.cooldown = 20
    end)
@@ -2204,6 +2227,10 @@ function _init()
 end
 
 function _update()
+ if next_room then
+  cur_room, next_room = next_room, nil
+  if (cur_room.onswitchto) cur_room:onswitchto()
+ end
  cur_room:update()
 end
 
