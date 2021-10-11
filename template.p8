@@ -64,10 +64,20 @@ function chainmap(query, ...)
  end
 end
 
--- create a closure
+-- returns a function that runs fn with specified arguments
 function closure(fn, ...)
  local vars = {...}
  return (function() fn(unpack(vars)) end)
+end
+
+-- returns a table with all elements in tbl for which
+-- criteria returns a truthy value
+function filter(tbl, criteria)
+ local matches = {}
+ foreach(tbl, function(obj)
+   if (criteria(obj)) add(matches, obj)
+  end)
+ return matches
 end
 
 -- reset with one transparent color
@@ -270,12 +280,14 @@ function entity:init(kwargs)
  kwargs = kwargs or {}
  self.ttl = kwargs.ttl or self.ttl
  self.z = kwargs.z or self.z
+ if (self.coupdate) self._coupdate = cocreate(self.coupdate, self)
 end
 function entity:update()
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
+ if (self._coupdate) assert(coresume(self._coupdate, self))
 end
 function entity:destroy() self._doomed = true end
 
@@ -304,6 +316,7 @@ local actor = entity:extend{
  z_is_y = false,  -- domain: camera perspective
 }
 function actor:init(pos, spr_, size, kwargs)
+ entity.init(self)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
  for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
@@ -377,27 +390,31 @@ function mob:get_hitbox(pos)
  )
 end
 function mob:update()
- actor.update(self)
  if (self.dynamic) self.hbox = self:get_hitbox()
+ actor.update(self)
 end
 function mob:drawdebug()
  if debug then
   -- print bbox and anchor/origin WITHIN box
   local drawbox = self.hbox:grow(vec_noneone)
   rect(mrconcatu(drawbox, 2))
-  actor.drawdebug(self)
  end
+ actor.drawdebug(self)
 end
 
 -- particle
 -- pos, vel, acc, ttl, col, z
-local particle = entity:extend{}
+-- set critical to true to force the particle even during slowdown
+local particle = entity:extend{
+ critical=false
+}
 function particle:init(pos, ...)
  -- assert(self != particle)
  entity.init(self)
  self.pos = pos
  self.vel, self.acc, self.ttl, self.col, self.z = ...
  if (self.z) self.z_is_y = false
+ if (stat(7) < 30 and not self.critical) self:destroy()
 end
 function particle:update()
  self.vel += self.acc
@@ -522,7 +539,7 @@ dbg=function()
   local t=type(v)
   if t=="table" then
    if(d>5)return "[table]"
-   local props={}
+   local props={_=tostr(v)}
    for key,val in pairs(v) do
     props[key]=inspect(val,d+1)
    end
