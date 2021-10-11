@@ -14,7 +14,7 @@ __lua__
 
 -- global vars
 local o_player
-local debug = true -- (stat(6) == 'debug')
+local debug = true  -- (stat(6) == 'debug')
 
 -- game state flags
 local speedshoes = debug
@@ -36,7 +36,7 @@ local state_flags = {}
 -- local sfx_fishcatch = 007
 -- local sfx_footstep = 008
 
--->8
+---->8
 -- utility
 
 -- any to string (dumptable)
@@ -171,7 +171,7 @@ function obj:extend(proto)
  return setmetatable(proto, self)
 end
 
--->8
+---->8
 -- math classes
 
 -- 2d vector
@@ -185,6 +185,7 @@ function vec:init(x, y)
 end
 function vec8(x, y) return vec(x, y)*8 end
 local vec_8_8 = vec(8, 8)
+local vec_8_2_3 = vec(16, 24)
 local vec_16_16 = vec(16, 16)
 local vec_oneone = vec(1, 1)
 local vec_twotwo = vec(2, 2)
@@ -195,7 +196,7 @@ local vec_noneone = vec(-1,-1)
 -- vec\d*\(.+?\)
 -- function vec:clone() return vec(self:unpack()) end
 -- function vec:flip() return vec(self.y, self.x) end
-function vec:floor() return vec(flr(self.x), flr(self.y)) end
+-- function vec:floor() return vec(flr(self.x), flr(self.y)) end
 function vec:__add(v, y)
  if (y) v = vec(v, y)
  return vec(self.x + v.x, self.y + v.y)
@@ -234,7 +235,7 @@ function bbox:init(origin, size)
  self.corner.x, self.corner.y,
  size:unpack()
 end
-function bbox.fromxywh(x, y, w, h) return bbox(vec(x, y), vec(w, h)) end
+function bbox.pack(x, y, w, h) return bbox(vec(x, y), vec(w, h)) end
 function bbox.pack(x0, y0, x1, y1)
  local o = vec(x0, y0)
  return bbox(o, vec(x1, y1)-o)
@@ -278,7 +279,7 @@ function bbox:maptiles(offset)
  return tiles
 end
 
--->8
+---->8
 -- stage classes
 
 -- entitys
@@ -297,14 +298,14 @@ function entity:init(kwargs)
  kwargs = kwargs or {}
  self.ttl = kwargs.ttl or self.ttl
  self.z = kwargs.z or self.z
- if (self.coupdate) self._coupdate = cocreate(self.coupdate, self)
+-- if (self.coupdate) self._coupdate = cocreate(self.coupdate, self)
 end
 function entity:update()
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
- if (self._coupdate) assert(coresume(self._coupdate, self))
+-- if (self._coupdate) assert(coresume(self._coupdate, self))
 end
 function entity:destroy() self._doomed = true end
 
@@ -336,7 +337,7 @@ function actor:init(pos, spr_, size, kwargs)
  entity.init(self)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
- for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
+ for prop in all{'anchor', 'offset', 'z_is_y', 'tcol', 'paltab'} do
   self[prop] = chainmap(prop, kwargs, self)
  end
  self._apos = self.pos + self.anchor + self.offset
@@ -395,8 +396,9 @@ function mob:init(pos, spr_, size, kwargs)
  kwargs = kwargs or {}
  actor.init(self, pos, spr_, size, kwargs)
  self.bsize = chainmap('bsize', kwargs, self) or self.size
- self.hbox_offset = chainmap('hbox_offset', kwargs, self)
- self.dynamic = chainmap('dynamic', kwargs)
+ for prop in all{'hbox_offset', 'dynamic', 'obstructs'} do
+  self[prop] = chainmap(prop, kwargs, self)
+ end
  self.hbox = self:get_hitbox()
 -- assert(mob.bsize == nil, 'mob class bsize set')
 end
@@ -423,7 +425,7 @@ end
 -- pos, vel, acc, ttl, col, z
 -- set critical to true to force the particle even during slowdown
 local particle = entity:extend{
- critical=false
+-- critical=false
 }
 function particle:init(pos, ...)
  -- assert(self != particle)
@@ -431,7 +433,8 @@ function particle:init(pos, ...)
  self.pos = pos
  self.vel, self.acc, self.ttl, self.col, self.z = ...
  if (self.z) self.z_is_y = false
- if (stat(7) < 30 and not self.critical) self:destroy()
+ --  and not self.critical
+ if (stat(7) < 30) self:destroy()
 end
 function particle:update()
  self.vel += self.acc
@@ -446,9 +449,9 @@ function particle:draw()
   pset(self.pos.x, self.pos.y, self.col)
  end
 end
-function sprparticle(spr, size, ...)
+function sprparticle(spr_, size, ...)
  local p = particle(...)
- p.spr = spr
+ p.spr = spr_
  p.size = size
  return p
 end
@@ -519,7 +522,7 @@ function stage:schedule(tics, callback)
   })
 end
 
--->8
+---->8
 -- game utility
 
 -- focus stack
@@ -539,148 +542,6 @@ function focus:pop(expected)
 end
 
 function vec16(x, y) return vec(x, y)*16 end
-
--- interactive debugger
--- based on work by mot ?tid=37822
--- dbg=function()
---  poke(0x5f2d, 1)
---  local vars,sy={},0
---  local mx,my,mb,pb,click,mw,exp,x,y,dragx0, dragy0,mbox
---  function butn(exp,x,y)
---   local hover=mx>=x and mx<x+4 and my>=y and my<y+6
---   print(exp and "-" or "+",x,y,hover and 7 or 5)
---   return hover and click
---  end
---  function inspect(v,d)
---   d=d or 0
---   local t=type(v)
---   if t=="table" then
---    if(d>5)return "[table]"
---    local props={}
---    for key,val in pairs(v) do
---     props[key]=inspect(val,d+1)
---    end
---    return {
---     expand=false,
---     props=props
---    }
---   elseif t=="string" then
---    return chr(34)..v..chr(34)
---   elseif t=="boolean" then
---    return v and "true" or "false"
---   elseif t=="nil" or t=="function" or t=="thread" then
---    return "["..t.."]"
---   else
---    return ""..v
---   end
---  end
---  function drawvar(var,name)
---   if type(var)=="string" then
---    print(name..":",x+4,y,6)
---    print(var,x+#(""..name)*4+8,y,7)
---    y+=6
---   else
---    -- expand button
---    if(butn(var.expand,x,y))var.expand=not var.expand
---    print(name,x+4,y,12) y+=6
---    if var.expand then  -- content
---     x+=2
---     for key,val in pairs(var.props) do
---      drawvar(val,key)
---     end
---     x-=2
---    end
---   end
---  end
---  function copyuistate(src,dst)
---   if type(src)=="table" and type(dst)=="table" then
---    dst.expand=src.expand
---    for key,val in pairs(src.props) do
---     copyuistate(val,dst.props[key])
---    end
---   end
---  end
---  function watch(var,name)
---   name=name or "[var]"
---   local p,i=vars[name],inspect(var)
---   if(p)copyuistate(p,i)
---   vars[name]=i
---  end
---  function clear()
---   vars={}
---  end
---  function draw(dx,dy,w,h)
---   dx=dx or 0
---   dy=dy or 48
---   w=w or 128-dx
---   h=h or 128-dy
---   -- collapsed mode
---   if not exp then
---    dx+=w-10
---    w,h=10,5
---   end
---   -- window
---   clip(dx,dy,w,h)
---   color(1)
---   rectfill(box_screen:unpack())
---   x=dx+2 y=dy+2-sy
-
---   -- read mouse
---   mx,my,mw=stat(32),stat(33),stat(36)
---   mb=band(stat(34),1)~=0
---   click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
---   pb=mb
-
---   if mb then
---    mbox = bbox.pack(dragx0, dragy0, mx, my)
---   else
---    dragx0, dragy0 = mx, my
---    mbox = nil
---   end
-
---   if exp then
---    -- variables
---    for k,v in pairs(vars) do
---     drawvar(v,k)
---    end
---    -- scrolling
---    local sh=y+sy-dy
---    sy=max(min(sy-mw*8,sh-h),0)
---   end
---   -- expand/collapse btn
---   if(butn(exp,dx+w-10,dy))exp=not exp
---   -- draw mouse ptr
---   clip()
-
---   line(mx,my,mx,my+2,8)
---   color(7)
---  end
---  function show()
---   exp=true
---   while exp do
---    draw()
---    flip()
---   end
---  end
---  function prnt(v,name)
---   watch(v,name)
---   show()
---  end
-
---  return{
---   watch=watch,
---   clear=clear,
---   expand=function(val)
---    if(val~=nil)exp=val
---    return exp
---   end,
---   draw=draw,
---   mbox=function() return mbox end,
---   show=show,
---   print=prnt
---  }
--- end
--- dbg = dbg()
 
 -- dialog box
 -- based on work by rustybailey
@@ -777,9 +638,7 @@ local dialoger = entity:extend{
     -- otherwise, print 1 character per frame
     -- with sfx about every 5 frames
     if (i % 5 == 0) sfx(self.opts.blip or 000)
-    if not btnp(5) then
-     yield()
-    end
+    if (not btnp(5)) yield()
    end
    self.current_message ..= '\n'
    self.current_line_count += 1
@@ -855,15 +714,15 @@ local dialoger = entity:extend{
    if self.blinking_counter > 15 then
     color(13)
     if self.current_line_in_table == #self.messages_by_line then
-     print('◆', screen_width - 11, screen_width - 10)
+     print('◆', 117, 118)
     else
      -- draw arrow
      for box in all{
-      bbox.pack(-12,-9,-8,-9),
-      bbox.pack(-11,-8,-9,-8),
-      bbox.pack(-10,-7,-10,-7)
+      bbox.pack(116, 119, 120, 119),
+      bbox.pack(117, 120, 119, 120),
+      bbox.pack(118, 121, 118, 121)
      } do
-      line(box:shift(vec(screen_width)):unpack())
+      line(box:unpack())
      end
     end
    end
@@ -932,7 +791,7 @@ local choicer = entity:extend{
  end
 }
 
--->8
+---->8
 -- game classes
 
 local _music = music
@@ -1072,7 +931,7 @@ local t_npc = t_sign:extend{
 }
 function t_npc:init(...)
  t_sign.init(self, ...)
- self.size = vec8(2, 3)
+ self.size = vec_8_2_3
  self.spr0 = self.spr
  npcify(self)
 end
@@ -1121,11 +980,10 @@ local t_button = mob:extend{
 
 function newportal(pos, dest, deststate)
  o_portal = t_button(pos, 005, vec8(3, 1), {
-   anchor=vec(-12, 0), hbox_offset=vec(-12, -3)
+   anchor=vec(-12, 0), hbox_offset=vec(-12, -3), tcol=15
   })
  -- o_portal.anchor = vec(-12, 0)
  -- o_portal.hbox_offset = vec(-12, 0)
- o_portal.tcol = 15
  o_portal.bsize += vec(0, 6)
  o_portal.hbox = o_portal:get_hitbox()
  function o_portal:draw()
@@ -1138,7 +996,7 @@ function newportal(pos, dest, deststate)
   local p_origin = o_player._apos
   local p_extent = p_origin + o_player.size
   for i = 0, 24 do
-   local p = cur_room:add(particle(
+   local p = self.stage:add(particle(
      vec(0, 4) + vec(
       rndr(p_origin.x, p_extent.x),
       rndr(p_origin.y, p_extent.y)
@@ -1161,16 +1019,20 @@ function newportal(pos, dest, deststate)
   -- end
   if p.hbox:overlaps(self.hbox) then
    self:spark()
-   p:destroy()
+   del(p.stage.objects, p)  -- don't actually destroy
    sfx(001)
    self.stage:schedule(16, function()
      -- new room after animation
-     change_room(self.dest)
- --     next_room:schedule(0, function()
- --       o_player.pos = deststate.pos or o_player.pos
- --       o_player.facing = deststate.facing or o_player.facing
- -- o_player.cooldown = 5
- --      end)
+     change_room_reset(dest, deststate)
+     p.stage:schedule(2, function()  -- todo i don't know why this is 2. can't be less or the player appears too soon
+       -- put the player back for when the room comes back into focus
+       p.stage:add(p)
+      end     )
+    --     next_room:schedule(0, function()
+    --       o_player.pos = deststate.pos or o_player.pos
+    --       o_player.facing = deststate.facing or o_player.facing
+    -- o_player.cooldown = 5
+    --      end)
     end)
   end
  end
@@ -1255,6 +1117,7 @@ function t_player:move()
  self.ismoving = self.moved
 end
 function t_player:tryinteract()
+ local facemap = {d=vec(0, 6),u=vec(0,-12),l=vec(-12,-6),r=vec(12,-6)}
  -- passive triggers
  local stillintrigger = false
  for _,obj in pairs(self.stage.objects) do
@@ -1267,7 +1130,7 @@ function t_player:tryinteract()
  self.justtriggered = stillintrigger
  -- try interact
  if btnp(4) then
-  local ibox = bbox(self.hbox.origin, vec_8_8):shift(facemap_move[self.facing]*8)
+  local ibox = bbox(self.hbox.origin, vec_8_8):shift(facemap[self.facing])
   -- self.ibox = ibox
   local interactable = filter(self.stage.objects, function(o) return o.interact end)
   function p_dist(object)
@@ -1286,7 +1149,6 @@ function t_player:tryinteract()
  end
 end
 function t_player:update()
-
  self.ismoving = false
  if (focus:is'player') self:move()
  if self.cooldown > 0 then
@@ -1318,13 +1180,13 @@ local room = stage:extend{
 function room:init(name)
  mx, my, mw, mh = self.mapbox:unpack()
  self.map_origin = vec8(mx, my)*2
- self.box_map = bbox.fromxywh(0, 0, mw, mh)
+ self.box_map = bbox.pack(0, 0, mw, mh)
  self.box_cells = self.box_map*16
  self.box_px = self.box_cells*8
 
- self:add(choicer)
  self.camfocus = self.startpos
  stage.init(self)
+ self:add(choicer)
  -- stage.init(room)
  self.o_player = self:add(t_player(self.startpos))
  self:add(dialoger)
@@ -1373,24 +1235,34 @@ function room:draw()
  self.cam = cam
  stage.draw(self)
 
--- camera()
+ camera()
 -- if debug and o_player then
 
---  local ui_offset = cam - self.box_px.origin
---  poke(0x5f2d, 1)
---  local mous = vec(stat(32), stat(33))
---  pset(mrconcatu(mous, 10))
---  mous += ui_offset
+-- local ui_offset = cam - self.box_px.origin
+-- poke(0x5f2d, 1)
+-- local mous = vec(stat(32), stat(33))
+-- pset(mrconcatu(mous, 10))
+-- mous += ui_offset
 
---  prints('plr  ' .. tostr(o_player.pos), 0, 0)
---  prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
---  prints('-16' .. tostr(o_player.pos:__div(16):floor()), 68, 8)
---  line(67, 2, 67, 10)
---  prints('room ' .. tostr(self.map_origin/16), 0, 8)
---  prints('mous ' .. tostr(mous), 0, 16)
---  prints('-- 8' .. tostr(mous:__div(8):floor()), 64, 16)
---  prints('-16' .. tostr(mous:__div(16):floor()), 68, 24)
---  line(67, 18, 67, 26)
+-- prints('room ' .. tostr(self.map_origin/16), 0, 0)
+-- prints(focus:get(), 64, 0)
+-- prints(#self.objects, 96, 0)
+-- prints('plr  ' .. tostr(o_player.pos), 0, 8)
+-- prints('8' .. tostr(o_player.pos:__div(8)), 64, 8)
+
+-- prints(tostr(self), 64, 0)
+-- prints('mous ' .. tostr(mous), 0, 16)
+-- prints('8' .. tostr(mous:__div(8)), 64, 16)
+
+-- prints('plr  ' .. tostr(o_player.pos), 0, 0)
+-- prints('--8' .. tostr(o_player.pos:__div(8):floor()), 64, 0)
+-- prints('-16' .. tostr(o_player.pos:__div(16):floor()), 68, 8)
+-- line(67, 2, 67, 10)
+-- prints('room ' .. tostr(self.map_origin/16), 0, 8)
+-- prints('mous ' .. tostr(mous), 0, 16)
+-- prints('-- 8' .. tostr(mous:__div(8):floor()), 64, 16)
+-- prints('-16' .. tostr(mous:__div(16):floor()), 68, 24)
+-- line(67, 18, 67, 26)
 -- end
 end
 
@@ -1400,24 +1272,25 @@ function drawgreat(self)
  if (self.label) print(self.label, mrconcatu(self.pos:__add(-1,-6), 7))
 end
 
--->8
+---->8
 --rooms
 
 local cur_room, next_room
 
 local room_cache = {}
+-- todo can't backtrack
 function change_room(nroom, deststate)
  if (not room_cache[nroom]) room_cache[nroom] = nroom()
  next_room = room_cache[nroom]
 
- if o_player then -- might be first init
-   deststate = deststate or {}
-   if (deststate.rel_pos) deststate.pos = p.pos + deststate.rel_pos
-   next_room:schedule(0, function()
-     o_player.pos = chainmap('pos', deststate, o_player)
-     o_player.facing = chainmap('facing', deststate, o_player)
-    end)
-   o_player.cooldown = 1
+ if o_player then  -- might be first init
+  deststate = deststate or {}
+  if (deststate.rel_pos) deststate.pos = o_player.pos + deststate.rel_pos
+  next_room:schedule(0, function()
+    o_player.pos = chainmap('pos', deststate, o_player)
+    o_player.facing = chainmap('facing', deststate, o_player)
+    o_player.cooldown = 1
+   end)
  end
 end
 function change_room_reset(nroom, ...)
@@ -1425,9 +1298,9 @@ function change_room_reset(nroom, ...)
  change_room(nroom, ...)
 end
 
-
 local paltab_prospitchest = {[5]=7,[1]=6}
 local paltab_dersite = {[14]=0, [7]=0, [0]=7}
+local paltab_prospitchest_2 = {paltab=paltab_prospitchest}
 
 function prettify_map()
  local tiletable = {
@@ -1442,14 +1315,14 @@ function prettify_map()
  end
 end
 
-local r_complab = room:extend{
+r_complab = room:extend{
  startpos = vec16(8, 8.25),
- mapbox = bbox.fromxywh(0, 0, 2, 2),
+ mapbox = bbox.pack(0, 0, 2, 2),
  name="complab",
  music=00
 }
 function r_complab:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
  self:add(t_sign(vec16(1.5, 0.5), 010, vec_16_16)).lines = "two white lines of text are blown up to fill the entire screen.\rit's so huge you can read it from across the room.\ri wonder what it says."
 
@@ -1470,8 +1343,8 @@ function r_complab:init(v)
 
  -- todo polish dialogue
  self:add(t_chest('clabfaygo',vec8(23, 20), 043, vec(1, 2))).getlines = "you got a faygo! a fun drink for fun people.\rit tastes like red pop."
- 
-  self:add(t_sign(vec(172, 194), 034, vec8(2, 1))).lines = "these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."
+
+ self:add(t_sign(vec(172, 194), 034, vec8(2, 1))).lines = "these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."
 
  self:add(t_sign(vec(142, 203), 032, vec_16_16)).lines = "it's a stray fiduspawn host plush.\ronce hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."
 
@@ -1486,6 +1359,7 @@ function r_complab:init(v)
 
  self:add(t_sign(vec16(0, 11), false, vec16(5, 5))).lines = "this corner of the room feels strangely empty and unoccupied.\ryes, both."
 
+ -- todo busted
  local o_karkat = self:add(t_npc(vec(64, 64), 070))
  o_karkat.color = 5
  function o_karkat:interact(player)
@@ -1498,18 +1372,17 @@ function r_complab:init(v)
   end
   t_npc.interact(self, player, choices)
  end
-
  self:add(newportal(self.startpos, r_tee))
 end
 
-local r_tee = room:extend{
+r_tee = room:extend{
  startpos = vec8(3, 12),
- mapbox = bbox.fromxywh(2, 0, 1, 1),
+ mapbox = bbox.pack(2, 0, 1, 1),
  name="teerezi",
  music=02
 }
 function r_tee:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
  o_chest = self:add(
   t_chest('scalemate',vec8(5, 5), 142, vec_twotwo, 15)
@@ -1518,16 +1391,15 @@ function r_tee:init(v)
  o_chest.emptylines = "there was also a rope in the chest. you decide to leave it and take the scalemate far away."
 
  o_scalehang = self:add(actor(vec16(5, 3.5), 142, vec_16_16, {
-    anchor = vec8(0,-5)
+    anchor = vec8(0,-5), tcol=15, paltab={[3]=2, [11]=8,[12]=11}
    }))
- o_scalehang.tcol = 15
- o_scalehang.paltab = {[3]=2, [11]=8,[12]=11}
  function o_scalehang:draw()
   local spx, spy = self.pos:__add(9,-32):unpack()
   line(spx, spy, spx, spy-32, 7)
   mob.draw(self)
  end
 
+ -- todo choicer busted
  -- todo write dialogue
  o_terezi = self:add(t_npc(vec8(8, 7), 128))
  o_terezi.color = 3
@@ -1546,22 +1418,22 @@ function r_tee:init(v)
 
 end
 
-local r_lab = room:extend{
+r_lab = room:extend{
  startpos = vec(64, 90),
- mapbox = bbox.fromxywh(6, 0, 1, 2),
+ mapbox = bbox.pack(6, 0, 1, 2),
  name="scilab",
  music=02
 }
 function r_lab:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
  for y = 0, 3 do
   for x = 0, 1 do
-   if (y != 2 and x != 0) then
-   o_cap = self:add(actor(vec16((x*3+2), (y*3+4)), 076, vec8(2, 3), {
-      anchor=vec8(0,-2),
-      tcol=10
-     }))
+   if y != 2 or x != 0 then
+    o_cap = self:add(actor(vec16((x*3+2), (y*3+4)), 076, vec_8_2_3, {
+       anchor=vec8(0,-2),
+       tcol=10
+      }))
    end
   end
  end
@@ -1617,24 +1489,26 @@ function r_lab:init(v)
 
  self:add(newportal(vec(64, 84), r_tee, {
     facing='d',
-    pos=vec(104, 91)
+    pos=vec(112, 91)
    }))
 
- self:add(t_trigger(vec(124, 192), vec8(.5, 4), r_hallway))
+ self:add(t_trigger(vec(124, 192), vec8(.5, 4), r_hallway, {
+    facing='r',
+    rel_pos=vec(-112, -136)
+   }))
 
 end
 
-
-local r_hallway = room:extend{
+r_hallway = room:extend{
  startpos = vec(14, 72),
- mapbox = bbox.fromxywh(2, 1, 1, 1),
+ mapbox = bbox.pack(2, 1, 1, 1),
  name="hallway",
  music=-1
 }
 function r_hallway:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
- local greydoor = self:add(t_sign(vec8(7, 4), 030, vec8(2, 3)))
+ local greydoor = self:add(t_sign(vec8(7, 4), 030, vec_8_2_3))
  greydoor.tcol = 1
  function greydoor:interact(player)
   if self.talkedto < 1 then
@@ -1647,25 +1521,28 @@ function r_hallway:init(v)
 
  self:add(t_trigger(vec(0, 56), vec8(.5, 4), r_lab, {
     facing='l',
-    pos=vec(115, 208)
+    rel_pos=vec(112, 136)
    }))
 
- self:add(t_trigger(vec8(15.5, 7), vec8(.5, 4), r_stair))
+ self:add(t_trigger(vec8(15.5, 7), vec8(.5, 4), r_stair, {
+    facing='r',
+    rel_pos=vec(-111,-24)
+   }))
 
 end
 
-local r_stair = room:extend{
+r_stair = room:extend{
  startpos = vec(18, 52),
- mapbox = bbox.fromxywh(7, 0, 1, 2),
+ mapbox = bbox.pack(7, 0, 1, 2),
  name="stairway",
  music=04
 }
 function r_stair:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
  local o_trigback = self:add(t_trigger(vec(0, 32), vec(4, 32), r_hallway, {
     facing='l',
-    pos=vec8(13, 9)
+    rel_pos=vec(111,24)
    }))
  function o_trigback:hittrigger(p)
   state_flags['leftstair'] = true
@@ -1681,8 +1558,8 @@ function r_stair:init(v)
  self:add(t_chest('stair2',vec16(2, 2), 206, vec_twotwo, 12)).getlines = "you got minihoof!\rsmall enough to sit on your desk, horse enough to be entirely inconvenient to care for.\rtotally worth it though."
 
  local o_stair_rail = self:add(mob(vec(65, 80), nil, vec(15, 1),{
-  obstructs=true
-  }))
+    obstructs=true
+   }))
 
  local o_stair = self:add(mob(vec8(6.5, 10), nil, vec8(3, 5)))
  function o_stair:hittrigger(player)
@@ -1696,9 +1573,9 @@ function r_stair:init(v)
   end
  end
 
- local o_gio = self:add(t_npc(vec(33, 206), 064, {
-  paltab={[7]=8, [0]=8, [14]=0, [13]=0}
-  }))
+ local o_gio = self:add(t_npc(vec(33, 206), 064, vec_8_2_3, {
+    paltab={[7]=8, [0]=8, [14]=0, [13]=0}
+   }))
  -- o_gio.addline(function() o_gio.prefix = '' o_gio.ismoving = false end)
  function o_gio:interact(player)
   local choices = {
@@ -1753,7 +1630,7 @@ function r_stair:init(v)
  o_p8cart.lines = "it's a pico-8 game cartridge. these things have a maximum capacity of about 90% the size of just the first animated panel of mspa, so programming one can be a royal headache.\rbut sometimes you've got to take off your archivist's stovetop hat and toil for a minute\runder the pulled-back baseball cap of the secrets' sommelier.\ryou think you'll stick with godot instead."
 
  local o_great = self:add(t_button(vec16(1, 6), false, vec_16_16))
- o_great.interact = closure(change_room, r_turbine, {pos=vec(24, 122), facing='u'})
+ o_great.interact = closure(change_room_reset, r_turbine, {pos=vec(24, 122), facing='u'})
  if (state_flags['leftstair'] and not state_flags['knowsgreat']) o_great.label = "GREAT"
  o_great.draw = drawgreat
 
@@ -1762,16 +1639,16 @@ function r_stair:init(v)
 
 end
 
-local r_turbine = room:extend{
+r_turbine = room:extend{
  startpos = vec(24, 112),
- mapbox = bbox.fromxywh(3, 0, 2, 1),
+ mapbox = bbox.pack(3, 0, 2, 1),
  name="ventway",
  music=00
 }
 function r_turbine:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
-  -- todo check this business
+ -- todo check this business
  self.o_player.bsize = vec(14, 10)  -- feel cramped
  self.o_player.hbox_offset = vec(-7, -10)
 
@@ -1846,9 +1723,9 @@ function r_turbine:init(v)
 
  end
 
- local o_andrew = self:add(t_sign(vec8(14, 11), 140, vec8(2, 3)))
+ local o_andrew = self:add(t_sign(vec8(14, 11), 140, vec_8_2_3))
  npcify(o_andrew)
- o_andrew.tcol = 14
+ -- o_andrew.tcol = 14
 
  self:add(t_sign(vec8(19, 11), false, vec_8_8)).lines = "try as you might, you can't cross the gap.\rprobably would have been a disappointment, honestly."
 
@@ -1857,33 +1734,32 @@ function r_turbine:init(v)
     pos=vec(24, 121)
    }))
  self:add(t_trigger(vec8(14, 0), vec8(2, .5), r_ocean))
- self:add(t_trigger(vec8(31.5,4), vec8(.5, 2), r_johnroof))
+ self:add(t_trigger(vec8(31.5,4), vec8(.5, 2), r_johnroof,{
+    facing='r',
+    pos=vec(16, 98)
+   }))
  self:add(t_trigger(vec8(31.5,10), vec8(.5, 2), r_johnroof,{
     facing='r',
     pos=vec(16, 127)
    }))
 end
 
-local r_johnroof = room:extend{
+r_johnroof = room:extend{
  startpos = vec(16, 98),
- mapbox = bbox.fromxywh(5, 0, 1, 1),
+ mapbox = bbox.pack(5, 0, 1, 1),
  name="john's roof",
  music=01
 }
 function r_johnroof:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
- local o_stair_rail = self:add(mob(vec(77, 48), nil, vec(3, 64)))
- o_stair_rail.obstructs = true
+ self:add(mob(vec(77, 48), nil, vec(3, 64), {obstructs=true}))
 
- local o_chest = self:add(t_chest('pogo',vec8(7, 6), 078, vec_twotwo, 3, {
-    paltab = paltab_prospitchest
-  }))
+ local o_chest = self:add(t_chest('pogo',vec8(7, 6), 078, vec_twotwo, 3, paltab_prospitchest_2))
  o_chest.ipaltab = {[11]=12, [0]=6}
  o_chest.getlines = "you got a rare off-color slimer!\ran artifact of a simpler time."
 
- local o_chest = self:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone))
- o_chest.getlines = "it's a glass of... what is that, faygo cut with limoncello?\ra drink for the direst of circumstances."
+ self:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone)).getlines = "it's a glass of... what is that, faygo cut with limoncello?\ra drink for the direst of circumstances."
 
  local o_pogo = self:add(t_sign(vec8(12, 9), 078, vec_16_16, {bsize=vec_8_8, obstructs=true, tcol=3}))
  o_pogo.lines = {
@@ -1895,7 +1771,7 @@ function r_johnroof:init(v)
  }
 
  function o_pogo:update()
-  self.anchor = vec(-4, self.stage.mclock % 32 < 16 and -8 or -7)
+  self.offset = vec(0, self.stage.mclock % 32 < 16 and 0 or -1)
   mob.update(self)
  end
 
@@ -1903,7 +1779,7 @@ function r_johnroof:init(v)
 
  if state_flags['faygocelloshown'] then
   local o_lamppost = self:add(t_sign(vec8(6, 9), 078, vec_8_8, {
-    obstructs=true, tcol=14
+     obstructs=true, tcol=14
     }))
   o_lamppost.lines = {
    function() sfx(007) end,
@@ -1922,9 +1798,8 @@ function r_johnroof:init(v)
   function o_lamppost:draw()
    paltt(self.tcol)
    spr(023, self.pos:unpack())
-   spr(022, self.pos:__sub(vec8(0, 4)):unpack())
-   local line_
-   line_ = bbox(self.pos + vec(3, -25), vec(0, 25))
+   spr(022, self.pos:__sub(0, 4):unpack())
+   local line_ = bbox(self.pos:__add(3, -25), vec(0, 25))
    line(mrconcatu(line_, 0))
    line(mrconcatu(line_:shift(vec_x1), 5))
 
@@ -1937,27 +1812,29 @@ function r_johnroof:init(v)
   end
  end
 
- self:add(t_trigger(vec8(1, 11), vec8(0.5, 6), r_turbine, {
-    facing='l',
-    pos=vec8(30, 6)
-   }))
+ self:add(t_trigger(vec8(1, 11), vec8(0.5, 6), r_turbine))
 end
 
-local r_ocean = room:extend{
+r_ocean = room:extend{
  startpos = vec(104, 40),
- mapbox = bbox.fromxywh(5, 1, 1, 1),
+ mapbox = bbox.pack(5, 1, 1, 1),
  name="ocean roof",
  music=03
 }
 function r_ocean:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
  self.paltab = {[3]=5, [11]=4}
 
- self:add(t_button(vec16(6, 1), 234, vec_16_16, {tcol=15}))
+ local o_great = self:add(t_button(vec16(6, 1), 234, vec_16_16, {tcol=15}))
 
- o_great.interact = closure(r_turbine, vec(121, 16))
+ o_great.interact = closure(change_room_reset, r_turbine, {pos=vec(121, 16)})
  o_great.draw = drawgreat
+
+ local o_stair = self:add(t_button(vec16(1, 4), false, vec_16_16, {
+    obstructs=true
+   }))
+ o_stair.interact = closure(change_room, r_chess)
 
  self:add(t_chest('oceanr',vec8(11, 9), 181, vec(2, 1))).getlines = "you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."
 
@@ -1976,11 +1853,6 @@ function r_ocean:init(v)
   end
   t_npc.interact(self, player, choices)
  end
-
- local o_stair = self:add(t_button(vec16(1, 4), false, vec_16_16, {
-  obstructs=true
-  }))
- o_stair.interact = closure(change_room, r_chess)
 
  function self:update()
   if self.mclock % 120 == 0 then
@@ -2009,18 +1881,18 @@ function r_ocean:init(v)
   rect(8, 24, 119, 87,4)
  end
 
- -- sfx(002)
+-- sfx(002)
 
 end
 
-local r_chess = room:extend{
+r_chess = room:extend{
  startpos = vec8(30, 10),
- mapbox = bbox.fromxywh(3, 1, 2, 1),
+ mapbox = bbox.pack(3, 1, 2, 1),
  name="castle board",
  music=05
 }
 function r_chess:init(v)
-  room.init(self, v)
+ room.init(self, v)
 
  function drawpillar(self)
   local spx, spy = self._apos:unpack()
@@ -2042,18 +1914,19 @@ function r_chess:init(v)
  end
 
  -- Todo polish dialog
- local o_stalemate_w = self:add(t_sign(vec8(7, 12), 066, vec8(2, 3)))
+ local o_stalemate_w = self:add(t_sign(vec8(7, 12), 066, vec_8_2_3))
  npcify(o_stalemate_w)
  o_stalemate_w.lines = "it's a north-going prospitian.\rit looks like they're stuck.\rthey look enraged."
 
- local o_stalemate_b = self:add(t_sign(vec8(7, 11), 064, vec8(2, 3)))
+ local o_stalemate_b = self:add(t_sign(vec8(7, 11), 064, vec_8_2_3))
  npcify(o_stalemate_b)
  o_stalemate_b.paltab=paltab_dersite
  o_stalemate_b.lines = "it's a south-going dersite.\rit looks like they're stuck.\rseems they've accepted it."
 
- local o_promoguy = self:add(t_npc(vec8(12.5, 7), 064, {
-  facing='r', paltab=paltab_dersite, dynamic=true
-  }))
+ local o_promoguy = self:add(t_npc(vec8(12.5, 7), 064, vec_8_2_3, {
+    paltab=paltab_dersite, dynamic=true
+   }))
+ o_promoguy.facing='r'
  o_promoguy.step = vec_x1
  function o_promoguy:update()
   self.ismoving = not self.istalking
@@ -2073,17 +1946,14 @@ function r_chess:init(v)
  local o_palt_portal = self:add(newportal(vec8(2, 9), r_complab))
  o_palt_portal.paltab = {[1]=7,[2]=10}
 
- local o_chest_tile = self:add(t_chest('tilechest',vec8(5, 5), 008, vec_twotwo))
- o_chest_tile.paltab = paltab_prospitchest
+ local o_chest_tile = self:add(t_chest('tilechest',vec8(5, 5), 008, vec_twotwo, paltab_prospitchest_2))
  o_chest_tile.getlines = "you found a floor tile!\ryou are filled with relief at some semblance of linear progression."
 
- local o_chest_nendroid = self:add(t_chest('nendroid',vec8(8, 5), 238, vec_twotwo))
- o_chest_nendroid.paltab = paltab_prospitchest
+ local o_chest_nendroid = self:add(t_chest('nendroid',vec8(8, 5), 238, vec_twotwo, paltab_prospitchest_2))
  o_chest_nendroid.itcol = 15
  o_chest_nendroid.getlines = "you found a homestuck nendroid!\rah. truly, you're living your best timeline."
 
- local o_chest_chaos = self:add(t_chest('chaose',vec8(24, 13), 124, vec_oneone))
- o_chest_chaos.paltab = paltab_prospitchest
+ local o_chest_chaos = self:add(t_chest('chaose',vec8(24, 13), 124, vec_oneone, paltab_prospitchest_2))
  o_chest_chaos.getlines = "you found a chaos emerald! can you find them all?\r(you have already found them all)"
  o_chest_chaos.emptylines = "weird, there's room in here for like six or eight."
 
@@ -2184,7 +2054,7 @@ function introscreen:draw()
  stage.draw(self)
 end
 
--->8
+---->8
 --pico-8 builtins
 
 function _init()
@@ -2215,11 +2085,11 @@ function _init()
  prettify_map()
  -- starting room
  if debug then
-  change_room(r_complab)
+  change_room(r_johnroof)
   focus:push'player'
  else
   cur_room = introscreen(90, function()
-    r_complab()
+    change_room(r_complab)
     focus:push'player'
     o_player.cooldown = 20
    end)
@@ -2293,7 +2163,7 @@ ffff1777771fffffffff1777771fffffffff1777771fffffffff1511111fffffffff1511115fffff
 fffff11111fffffffffff11111fffffffffff11111ffffffffff1555551fffffffff1551555ffffffffff155551fffff155511111211d5d1001ccc7c8ccc0000
 fffff1fff1fffffffffff1fff1fffffffffff1fff1ffffffffff1551551ffffffff111515511ffffffffff1551ffffffa15555555555d51a001ccc7cccc00700
 fffff1fff1fffffffffff1fff1fffffffffff1fff1ffffffff10551110551ffffff0001111051fffffffff100551ffffaa115555555511aa00010070cc007000
-ffff1fffff1fffffffff1fffff1ffffffffff1ffff1fffffff11111f11111ffffff1111111111fffffffff111111ffffaaaa11111111aaaa0000c00777770000
+ffff44fff44fffffffff44fff44ffffffffff4fff44fffffff11111f11111ffffff1111111111fffffffff111111ffffaaaa11111111aaaa0000c00777770000
 0000000000000000533333333333333555555555500050009999999909afa49049afa4947777ddd5000000000000000000000000772222dddddddddddddddddd
 0555555555555550011111111111111011111111050505059444444909afa49049afa4947666ddd50555555555555550008880007777dd2dd66dddd555ddd66d
 01111111111111100101011011011010000000005050505094444449099fa990499fa4947666ddd5011111111111111008fee80027700dd26d56dd57675d65d6
@@ -2302,30 +2172,30 @@ ffff1fffff1fffffffff1fffff1ffffffffff1ffff1fffffff11111f11111ffffff1111111111fff
 01560bb172196510011101101101111000000000555555559999999909afa49099999999ddd5766601566ffffff66510008e20002dd00dd2dddddd555ddddddd
 015ffdcd65163510010131131131101000000000555555559faaaaa9099fa9909faaaaa9ddd5766601566fff0ff6651000020000d2dddd2ddddddddddddddddd
 015dfdc665686510000000000000000055555555555555559999999909a99490999999995555766601566ff0bff6651000000000dd2222dddddddddddddddddd
-fffffffffffffffffffffffffffffffffffffffffffffffffffffff1ffffffffffffffff1fffffffffffffff11ffffffeeeeeeeeeeeeeeeefffffff00fffffff
-fffffffffffffffffffffffffffffffffffffffffffffffffff1f111ffffffffffffffff111f1fffffffff111fffffffeeeee00000eeeeeeffffff0b0fffffff
-fffff111111fffffffff11111111ffffffff111111ffffffff9111111111191ff1911111111119fffff1199111111fffeee004444400eeeefffff0b00000ffff
-fff11111111111ffff11111111111ffffff1111111111fff1f191111111191f11f191111111191f11ff11199111111f1ee04444444440eeeffff0bbbbbb0ffff
-19111111111111911911111111111191f11911111111111f111981111118911111111111111111111111119811111111e0444444444440eefff0bbbbbb000fff
-f19111111111191f1191111111111911f1119911111111ff111811111111811111111111111111111111111811111111e0444444444440eeff0cbbbbbbbb0fff
-f19981111118991f1181111111111811f1111981111111ff111111d1dd1111111111111111111111f111111111d11111e0444444444440ee00bbbbcbbbb0ffff
-ff1811111111811f1111111111111111f111111111111ffff111dddd6666111ff11111111111111ff1111116666dd11fe0444999444440ee0bbbbbbbb03b0fff
-ff1111dd11d111fff11111111111111ff11111111d111ffff11111166111111ff11111111111111fff1111161111d11fe0449999999440ee033000000f00ffff
-ff18878dd88881fff11111111111111ff111111648781ffff11119166191111ff11111111111111fff1111166191d1ffe0449779779440eef000f07770ff000f
-ff114788488811ffff1111111111111ff111111664788fffff115916619d11ffff111111111111fffff111666d91d1ffe0499999999940eefffff0aabb00000f
-ff111dd6666111ffff111111111111fff111111666dd1ffffffdd5566dd66fffff111111111111fffff1111666d5d1ffee0999c999990eeefff0f0aabbbbb30f
-ff111d17716111ffff111111111111fff111116661771fffffff1dd33661fffffff1111111111fffffff1166633d1fffeee099c99990eeeeff0b000bbbb330ff
-ff111dd1166111ffff111111111111ffff11116666111ffffffff1dd661fffffffff11111111fffffffff1166dd1ffffeeee0999990eeeeeff0330b0b3300fff
-fff111dd66111fffff111111111111fffff111166d11fffffffff111111ffffffffff111111fffffffffff11111fffffeeeee00000eeeeeefff00033300fffff
-fff1100110011fffff111111111111fffff111000011ffffffff10333001ffffffff10000001ffffffffff10001fffffeeee0777770eeeeeffffff000fffffff
-fffff003300ffffffff1111111111ffffffff10000ffffffffff10031301ffffffff10000001fffffffff100031fffffeeee0774770eeeee0000000000000000
-fffff033330fffffffff10000001fffffffff10003ffffffffff10031301ffffffff10000001fffffffff100031fffffeeee0799970eeeee0000000000000000
-fffff000000fffffffff10000001fffffffff10000ffffffffff12003121ffffffff12000081fffffffff180011fffffeeee0799470eeeee0000000aa1111aa0
-fffff011110fffffffff10111101fffffffff11111ffffffffff12887821ffffffff12282881fffffffff182221fffffeeee0777770eeeee0000001aabbbbba0
-fffff000000fffffffff10000001fffffffff10000ffffffffff12888281ffffffff12288881fffffffff188871fffffeeee0d55550eeeee00000133bbbbbb10
-fffff000000fffffffff10000001ffffffffff0001ffffffffff12882221ffffffff12228881ffffffff1888211fffffeeee0ddddd0eeeee1110013bbbbbbbb1
-fff2488224882ffffff4441111488fffffffff88842ffffffff0555110555ffffff0001281055ffffff182215001ffffee01dd0001dd0eee1bb113bb11111111
-fff2222222222ffffff2222112222fffffffff22222ffffffff1111111111ffffff1111111111ffffff111111111ffffee00000e00000eee13bb13bbbbbb3110
+fffffffffffffffffffffffffffffffffffffffffffffffffffffff1ffffffffffffffff1fffffffffffffff11fffffffffffffffffffffffffffff00fffffff
+fffffffffffffffffffffffffffffffffffffffffffffffffff1f111ffffffffffffffff111f1fffffffff111ffffffffffff00000ffffffffffff0b0fffffff
+fffff111111fffffffff11111111ffffffff111111ffffffff9111111111191ff1911111111119fffff1199111111ffffff004444400fffffffff0b00000ffff
+fff11111111111ffff11111111111ffffff1111111111fff1f191111111191f11f191111111191f11ff11199111111f1ff04444444440fffffff0bbbbbb0ffff
+19111111111111911911111111111191f11911111111111f111981111118911111111111111111111111119811111111f0444444444440fffff0bbbbbb000fff
+f19111111111191f1191111111111911f1119911111111ff111811111111811111111111111111111111111811111111f0444444444440ffff0cbbbbbbbb0fff
+f19981111118991f1181111111111811f1111981111111ff111111d1dd1111111111111111111111f111111111d11111f0444444444440ff00bbbbcbbbb0ffff
+ff1811111111811f1111111111111111f111111111111ffff111dddd6666111ff11111111111111ff1111116666dd11ff0444999444440ff0bbbbbbbb03b0fff
+ff1111dd11d111fff11111111111111ff11111111d111ffff11111166111111ff11111111111111fff1111161111d11ff0449999999440ff033000000f00ffff
+ff18878dd88881fff11111111111111ff111111648781ffff11119166191111ff11111111111111fff1111166191d1fff0449779779440fff000f07770ff000f
+ff114788488811ffff1111111111111ff111111664788fffff115916619d11ffff111111111111fffff111666d91d1fff0499999999940fffffff0aabb00000f
+ff111dd6666111ffff111111111111fff111111666dd1ffffffdd5566dd66fffff111111111111fffff1111666d5d1ffff0999c999990ffffff0f0aabbbbb30f
+ff111d17716111ffff111111111111fff111116661771fffffff1dd33661fffffff1111111111fffffff1166633d1ffffff099c99990ffffff0b000bbbb330ff
+ff111dd1166111ffff111111111111ffff11116666111ffffffff1dd661fffffffff11111111fffffffff1166dd1ffffffff0999990fffffff0330b0b3300fff
+fff111dd66111fffff111111111111fffff111166d11fffffffff111111ffffffffff111111fffffffffff11111ffffffffff00000fffffffff00033300fffff
+fff1100110011fffff111111111111fffff111000011ffffffff10333001ffffffff10000001ffffffffff10001fffffffff0777770fffffffffff000fffffff
+fffff003300ffffffff1111111111ffffffff10000ffffffffff10031301ffffffff10000001fffffffff100031fffffffff0774770fffff0000000000000000
+fffff033330fffffffff10000001fffffffff10003ffffffffff10031301ffffffff10000001fffffffff100031fffffffff0799970fffff0000000000000000
+fffff000000fffffffff10000001fffffffff10000ffffffffff12003121ffffffff12000081fffffffff180011fffffffff0799470fffff0000000aa1111aa0
+fffff011110fffffffff10111101fffffffff11111ffffffffff12887821ffffffff12282881fffffffff182221fffffffff0777770fffff0000001aabbbbba0
+fffff000000fffffffff10000001fffffffff10000ffffffffff12888281ffffffff12288881fffffffff188871fffffffff0d55550fffff00000133bbbbbb10
+fffff000000fffffffff10000001ffffffffff0001ffffffffff12882221ffffffff12228881ffffffff1888211fffffffff0ddddd0fffff1110013bbbbbbbb1
+fff2488224882ffffff4441111488fffffffff88842ffffffff0555110555ffffff0001281055ffffff182215001ffffff01dd0001ff0fff1bb113bb11111111
+fff2222222222ffffff2222112222fffffffff22222ffffffff1111111111ffffff1111111111ffffff111111111ffffff00000f00000fff13bb13bbbbbb3110
 0666666051111115511111158888888e22ff2722000000000000980000055500dddd005d1111111110001000000000005555555555555555013bb3bbbbb31310
 5000000651111115511111158888888e7733772200000008aaa9a80055577650ddd0000011d111110101010111d111115666666666666665001bbbbbbb113100
 5d66666551111111111111150088808e7073772200ddd8ff7aa9980056777650dd0000dd1d511111101010101d51111156dddddddddddd6501bb1333333b1000
@@ -2335,21 +2205,21 @@ fff2222222222ffffff2222112222fffffffff22222ffffffff1111111111ffffff1111111111fff
 dd1111d651111111111111158888888eff7733f2002dc8eee999800005666555ddd50ddd1111d511111111111111d51156dddddddddddd650000000000000000
 0dddddd11555111111115551eeeeeeee227722f2002222220000000000555000dddddddd11111111111111111111111156666666666666650000000000000000
 fffffff111111fffff111111fffffffff11ffff111111fff00000000000000000000000000000000500010111101000556dddddddddddd65cccccccccccccce1
-fffff1111111fffffff1111111fffffff11111111111ffff0000000000000000000000000000000056dd51111d15155656dddddddddddd65cccccc1eccce0e1e
-fff11111111fffffffff11111111ffffff1111111111ffff000000000000000000000000000000000ddd151111d155565666666666666665cccccce1ee0070ee
-1111111111111fffff1111111111111fff11111111111fff000000000000000000000000000000000dd1d151111d555d56dddddddddddd65ccccccee107070ec
-1111111111111fffff1111111111111ff111111111111fff0000000000000000d0727272727272720ddd1d1111d1d55556dddddddddddd65ccccccc1e077770c
-f11111111111111f111111111111111ff11111111111111f000000000000000000000000000000000dddd111151d1d5d5666666666666665ccccccce0777770c
-111177111177111f111111111111111ff11111117771111f00000000000000d0d1727272727272720ddd1d111151dddd5611111111111165ccccccc007077770
-111ddd771ddd711f111111111111111ff1111117ddd7111f0000000000000000000000000000000005d1d1d111155ddd5611111111111165ccc0000e07077770
-11d777d7d777d1fff11111111111111ff111171d777d11ff000000000000d0d1d2d3d3d3d3d3d3d3055d1d1111d155d65611111111111165c00770ee07700770
-11d711d7d117d1ffff111111111111fff111177d711d1fff000000000000000000000000000000000d55d1111d1d155d5611111111111165077770ee0777700c
-117ddd777ddd71ffff111111111111fff1111777ddd71fff0000000000d0d1d2d3d3d3d3d3d3d3d30dd51d1111d1d55d5611111111111165070e770077770ccc
-f117777777711fffff111111111111fff111777777771fff000000000000000000000000000000000dd15151111ddddd56111111111111650700777777070ccc
-f11177dd77111ffffff1111111111fffff1117777d71ffff00000000d0d1d2d3d3d3d3d3d3e1f1d305dd151111d1dddd561111111111116500c0707007070ccc
-ff1117767111fffffff1111111111fffff111177771fffff00000000000000000000000000000000055dd1111d1d1ddd56111111111111650c07707007070ccc
-ff1a911119a1ffffffff11111111fffffff1111111ffffff72727272d1d2d3d3d3d3d3d3d3e2f2d30d551d1111d1dddd5666666666666665cc07070c07700ccc
-fffa9aaaa9afffffffffa111111affffffff1a9aa9ffffff000000000000000000000000000000000dd151d1111ddd655555555555555555cc00c00cc00ccccc
+fffff1111111fffffff1111111fffffff11111111111ffff00809080905b6b00000000000000000056dd51111d15155656dddddddddddd65cccccc1eccce0e1e
+fff11111111fffffffff11111111ffffff1111111111ffffeeeeeeeeeeeeeeee00000000000000000ddd151111d155565666666666666665cccccce1ee0070ee
+1111111111111fffff1111111111111fff11111111111fff008191c35b6bc70000000000000000000dd1d151111d555d56dddddddddddd65ccccccee107070ec
+1111111111111fffff1111111111111ff111111111111fffeeeeeeeeeeeeeeeed0727272727272720ddd1d1111d1d55556dddddddddddd65ccccccc1e077770c
+f11111111111111f111111111111111ff11111111111111f008090c3e0f0c30000000000000000000dddd111151d1d5d5666666666666665ccccccce0777770c
+111177111177111f111111111111111ff11111117771111feeeeeeeeeeeeeeeed1727272727272720ddd1d111151dddd5611111111111165ccccccc007077770
+111ddd771ddd711f111111111111111ff1111117ddd7111f008b918b31e0f000000000000000000005d1d1d111155ddd5611111111111165ccc0000e07077770
+11d777d7d777d1fff11111111111111ff111171d777d11ffeeeeeeeeeeeeeeeed2d3d3d3d3d3d3d3055d1d1111d155d65611111111111165c00770ee07700770
+11d711d7d117d1ffff111111111111fff111177d711d1fff0080c8d89031410000000000000000000d55d1111d1d155d5611111111111165077770ee0777700c
+117ddd777ddd71ffff111111111111fff1111777ddd71fffeeeeeeeeeeeeeeeed3d3d3d3d3d3d3d30dd51d1111d1d55d5611111111111165070e770077770ccc
+f117777777711fffff111111111111fff111777777771fff0081c9d98b81910000000000000000000dd15151111ddddd56111111111111650700777777070ccc
+f11177dd77111ffffff1111111111fffff1117777d71ffffeeeeeeeeeeeeeeeed3d3d3d3d3e1f1d305dd151111d1dddd561111111111116500c0707007070ccc
+ff1117767111fffffff1111111111fffff111177771fffff008bcada908090000000000000000000055dd1111d1d1ddd56111111111111650c07707007070ccc
+ff1a911119a1ffffffff11111111fffffff1111111ffffffeeeeeeeeeeeeeeeed3d3d3d3d3e2f2d30d551d1111d1dddd5666666666666665cc07070c07700ccc
+fffa9aaaa9afffffffffa111111affffffff1a9aa9ffffff008191819181910000000000000000000dd151d1111ddd655555555555555555cc00c00cc00ccccc
 fff9aaaaaa9fffffffff9aaaaaa9fffffffffaa99affffff72727272d2d3d3d3d3d3d3d3d3e3f3d3ffffffffffffffff77776666ee6666eefffff11111ffffff
 fffa9aaaa9afffffffffa9aaaa9afffffffffaaaa9ffffff00000000000000000000000000000000ffffffffffffffff77777666e600006eff11111111111fff
 fff9a9aa9a9fffffffff9a9aa9a9fffffffff9999affffff97979797727272727272727272727272fddddddddddddddf7777776660000006fff911111119ffff
@@ -2366,6 +2236,7 @@ ff2222222222fffffff2222222222ffffffff222222fffff00000000000000000000000000000000
 11111111111111115511111111115151551111111111515100000000000000000000000000000000d60606060606060d00555555d6dd5d6dfffff00000ffffff
 11111111111111115151111111111515515111111111151500000072727272000000000000000000fddddddddddddddf00055555ed6666defffff00000ffffff
 11111111111111111515111111111155151511111111115500000000000000000000000000000000ffffffffffffffff00005555eeddddeeffff2222222fffff
+
 __gff__
 0000010000000000010100000001000000010100000000000101000000010000000000000100000100000000000100000000000001000001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000
 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100010000000000000000000000000000010100000000000000000000000000000101000000000000000000000000000000000100000000000000000001010000000001000000
@@ -2424,6 +2295,49 @@ __sfx__
 050f002000600006000c625006000c6250c620006050060500605006050c625006050c6250c620006050060500605006050c625006050c6250c620006050060500605006050c625006050c6200c6250060500605
 492d18000c1320e1300f130061320e1300f1300c1320e1300f13006132121300e1300c1320e1300f130061320e1300f1300c1320e1300f13006132121301a1300010000100001000010000100001000010000100
 013400001d030110301d0301d0321b0301b03018030180301b0301b0300f0321c0301d030110301d0321f03020030200301403022030240302403020030200302503025030250302503224030240302403224032
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __music__
 03 13494344
 03 0b494344
