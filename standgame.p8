@@ -944,12 +944,13 @@ function t_trigger:init(pos, size, dest, deststate)
 end
 function t_trigger:hittrigger(p)
  if (p.justtriggered) return
- if self.deststate then
-  change_room(self.dest, self.deststate.pos)
-  next_room:schedule(0, function() o_player.facing = self.deststate.facing end)
- else
-  change_room(self.dest)
- end
+ local deststate = self.deststate or {}
+ if (deststate.rel_pos) deststate.pos = p.pos + deststate.rel_pos
+ change_room(self.dest)
+ next_room:schedule(0, function()
+   o_player.pos = deststate.pos or o_player.pos
+   o_player.facing = deststate.facing or o_player.facing
+  end)
  o_player.cooldown = 1
 -- cur_room:update()  -- align camera
 end
@@ -1124,10 +1125,14 @@ function room:init(startpos)
  self.camfocus = self.startpos
  stage.init(self)
  -- stage.init(room)
- o_player = self:add(t_player(startpos or self.startpos))
+ self.o_player = self:add(t_player(startpos or self.startpos))
  self:add(scoreui)
  -- self:add(choicer)
  self:add(dialoger)
+end
+function room:update()
+ o_player = self.o_player
+ stage.update(self)
 end
 function room:draw()
  local map_x, map_y = self.map_origin:unpack()
@@ -1237,8 +1242,12 @@ function r_thegame:init(v)
   mob.update(self)
  end
 
- self:add(t_trigger(vec8(0, 8), vec8(0.5, 3), r_closet))
- self:add(t_trigger(vec8(15.5, 8), vec8(0.5, 3), r_maze))
+ self:add(t_trigger(vec8(0, 8), vec8(0.5, 3), r_closet, {
+    rel_pos=vec8(14.5,0)
+   }))
+ self:add(t_trigger(vec8(15.5, 8), vec8(0.5, 3), r_maze, {
+    rel_pos=vec8(-14.5,0)
+   }))
  self:add(t_trigger(vec8(13, 0), vec8(1, 1), r_street))
 
 end
@@ -1250,7 +1259,7 @@ r_closet = room:extend{
 function r_closet:init(v)
  room.init(self, v)
  self:add(t_trigger(vec8(15.5, 8), vec8(0.5, 3), r_thegame, {
-    pos=vec8(0.5, 10)
+    rel_pos=vec8(-14.5,0)
    }))
 
  local junktiles = {49, 35, 36, 37, 51, 52, 53}
@@ -1292,13 +1301,13 @@ function r_closet:init(v)
   mob.update(self)
  end
  function o_pushcrate:interact(p)
-  local stuck = false
-  for stuckpos in all(split(
-    "0,7|0,14|14,7|14,14|4,8|5,7|11,8|10,9|7,9|8,7"
-    , "|")) do
-   if (self.pos == vec8(unpack(split(stuckpos)))) stuck = true; break
+  local stuck = 4
+  for __, dirvec in pairs(facemap_move) do
+   printh(dirvec)
+   local mvec = dirvec + self.pos:__div(8):floor() + self.stage.map_origin
+   stuck -= band(fget(mget(mvec:unpack())), 0b1)
   end
-  if (stuck) return t_sign.interact(self, p, "it's stuck.")
+  if (stuck >= 2) return t_sign.interact(self, p, "it's stuck.")
   self:push(p, p.facing)  -- else
  end
  function o_pushcrate:push(p, facing)
@@ -1324,7 +1333,7 @@ function r_street:init(v)
 
  function newcloud(xpos)
   local cloud = self:add(sprparticle(072, vec(2,1),
-    vec8(xpos, rndr(0,2.5)),
+    vec8(xpos, rndr(-0.5,2)),
     vec(rndr(.1, .4), 0),
     vec_zero,
     (256/0.1)
@@ -1402,7 +1411,7 @@ r_maze = room:extend{
 function r_maze:init(v)
  room.init(self, v)
  self:add(t_trigger(vec8(0, 8), vec8(0.5, 3), r_thegame, {
-    pos=vec8(15, 10)
+    rel_pos=vec8(14.5,0)
    }))
 
  local megablock = mob:extend{
@@ -1542,9 +1551,10 @@ function _update()
  if next_room then
   cur_room, next_room = next_room, nil
   if debug then
-   dbg.watch(cur_room, "room")
-   dbg.watch(cur_room._tasks, "tasks")
-   dbg.watch(cur_room.objects, "objects")
+   printh("new watch")
+   -- dbg.watch(cur_room, "room")
+   -- -- dbg.watch(cur_room._tasks, "tasks")
+   -- dbg.watch(cur_room.objects, "objects")
    dbg.watch(o_player, "player")
   end
  end
