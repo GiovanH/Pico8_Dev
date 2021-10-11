@@ -14,10 +14,10 @@ __lua__
 
 -- global vars
 local o_player
-local debug = true  -- (stat(6) == 'debug')
+local debug = (stat(6) == 'debug')
 
 -- game state flags
-local speedshoes = debug
+local hasdash = debug
 
 -- persistent object state
 local chest_data = {}
@@ -40,17 +40,17 @@ local state_flags = {}
 -- utility
 
 -- any to string (dumptable)
-function tostring(any, depth)
- if (type(any)~="table" or depth==0) return tostr(any)
- local nextdepth = depth and depth -1 or nil
- if (any.__tostring) return any:__tostring()
- local str = "{"
- for k,v in pairs(any) do
-  if (str~="{") str ..= ","
-  str ..= tostring(k, nextdepth).."="..tostring(v, nextdepth)
- end
- return str.."}"
-end
+-- function tostring(any, depth)
+--  if (type(any)~="table" or depth==0) return tostr(any)
+--  local nextdepth = depth and depth -1 or nil
+--  if (any.__tostring) return any:__tostring()
+--  local str = "{"
+--  for k,v in pairs(any) do
+--   if (str~="{") str ..= ","
+--   str ..= tostring(k, nextdepth).."="..tostring(v, nextdepth)
+--  end
+--  return str.."}"
+-- end
 
 -- print all arguments
 function printa(...)
@@ -192,6 +192,7 @@ local vec_twotwo = vec(2, 2)
 local vec_zero = vec(0, 0)
 local vec_x1 = vec(1, 0)
 local vec_y1 = vec(0, 1)
+local vec_16_8 = vec(16, 8)
 local vec_noneone = vec(-1,-1)
 -- vec\d*\(.+?\)
 -- function vec:clone() return vec(self:unpack()) end
@@ -591,9 +592,10 @@ local dialoger = entity:extend{
  format_message = function(self, message)
   -- sets self.messages_by_line to lines from message
   local total_msg = {}
-  local word = ''
-  local letter = ''
-  local current_line_msg = ''
+  local word, letter, current_line_msg = '', '', ''
+  -- local word = ''
+  -- local letter = ''
+  -- local current_line_msg = ''
 
   for i = 1, #message do
    letter = sub(message, i, i)
@@ -737,7 +739,7 @@ local choicer = entity:extend{
  char_size=vec(4, 5),
  size=nil,
  selected = 1,
- buttoncool = 0,
+ btn_cool = 0,
  prompt = function(self, choices, exopts)
   exopts = exopts or {}
   self.choices = choices
@@ -747,15 +749,14 @@ local choicer = entity:extend{
 
   local width = 0
   for v in all(self.choices) do
-   width = max(width, #v[1])
+   width = max(width, #v[1]) + 2  -- cursor
   end
-  width += 2  -- cursor
   -- 2px spacing
-  self.char_size_spaced = self.char_size:__add(0, 2)  -- compute once
-  self.size = self.char_size_spaced:dotp(width, #self.choices)
+  self.char_size_sp = self.char_size:__add(0, 2)  -- compute once
+  self.size = self.char_size_sp:dotp(width, #self.choices)
   self.size += self.padding*2 - vec(1, 3)  -- up to but not equal - last 2px space
   focus:push'choice'
-  self.buttoncool = 4
+  self.btn_cool = 4
  end,
  drawui = function(self)
   if (self.choices == nil) return
@@ -766,19 +767,19 @@ local choicer = entity:extend{
   for i,v in ipairs(self.choices) do
    print(v[1],
     mrconcatu(ppos:__add(
-      vec(2, i-1):dotp(self.char_size_spaced)
+      vec(2, i-1):dotp(self.char_size_sp)
      ), v[3] or 7))
   end
   color(7)
   if (self.stage.mclock % 16 < 8) color(5)
   print("> ",
    ppos:__add(
-    vec(0, self.selected-1):dotp(self.char_size_spaced)
+    vec(0, self.selected-1):dotp(self.char_size_sp)
    ):unpack())
  end,
  update = function(self)
   if (focus:isnt'choice') return
-  if (self.buttoncool > 0) self.buttoncool -= 1;    return
+  if (self.btn_cool > 0) self.btn_cool -= 1;    return
 
   if (btnp(2)) self.selected -= 1; sfx(004)
   if (btnp(3)) self.selected += 1; sfx(004)
@@ -795,10 +796,10 @@ local choicer = entity:extend{
 -- game classes
 
 local _music = music
-local music_playing = nil
+local cur_music = nil
 function music(t)
- if (t != music_playing) _music(t)
- music_playing = t
+ if (t != cur_music) _music(t)
+ cur_music = t
 end
 
 -- function roommenu_init(rooms)
@@ -814,7 +815,7 @@ end
 --   local left, right, select = b&1, b&10, b&100
 --   if (left>0) roommenu_room = ((roommenu_room-2) % #irooms) + 1
 --   if (right>0) roommenu_room = (roommenu_room % #irooms) + 1
---   if (select>0) irooms[roommenu_room]()
+--   if (select>0) change_room_reset(irooms[roommenu_room])
 --   set_roommenu(srooms[roommenu_room])
 --  end
 
@@ -854,7 +855,7 @@ local chest_data = {}
 local t_chest = t_sign:extend{
  id = nil,
  obstructs=true,
- bsize = vec8(2, 1),
+ bsize = vec_16_8,
  anchor = vec8(0,-1),
  getlines = "you got a[] [???]",
  emptylines = {}
@@ -866,9 +867,7 @@ function t_chest:init(id, pos, ispr, isize, itcol)
  for prop in all{'anchor', 'offset', 'z_is_y', 'tcol'} do
   self[prop] = chainmap(prop, kwargs, self)
  end
- self.ispr = ispr
- self.isize = isize
- self.itcol = itcol
+ self.ispr, self.isize, self.itcol = ispr, isize, itcol
 end
 function t_chest:interact(player)
  if not chest_data[self.id] then
@@ -917,7 +916,7 @@ function t_chest:draw()
 end
 
 function npcify(amob)
- amob.bsize = vec8(2, 1)
+ amob.bsize = vec_16_8
  amob.anchor = vec8(0,-2)
  amob.hbox_offset = vec8(0, 0)
  amob.hbox = amob:get_hitbox()
@@ -964,12 +963,11 @@ function t_npc:interact(player, choices)
 end
 function t_npc:draw()
  self.flipx = (self.facing == 'l')
- local facemap = {d=0, u=2, l=4, r=4}
- self.spr = self.spr0 + facemap[self.facing]
+ self.spr = self.spr0 + facemap_npcspr_off[self.facing]
  if (self.istalking or self.ismoving) and self.stage.mclock % 8 < 4 then
-  self.anchor = vec(0, -17)
+  self.offset = vec(0, -1)
  else
-  self.anchor = vec(0, -16)
+  self.offset = vec_zero
  end
  mob.draw(self)
 end
@@ -1051,23 +1049,21 @@ function t_trigger:hittrigger(p)
 end
 
 local t_player = mob:extend{
- ismoving = false,
+ -- ismoving = false,
  dynamic = true,
  facing = 'd',
  spr0 = 64,
- anchor = vec(-8, -24),
+ anchor = vec8(-1, -3),
  tcol = 15,
  cooldown = 1,
  justtriggered = true,
  paltab = {[14]=7},
- hbox_offset = vec(-7, -6),
  obstructs = true,
  dynamic=true
 }
-function t_player:init(pos, kwargs)
- kwargs = kwargs or {}
+function t_player:init(pos)
  mob.init(self, pos, 64, vec(16, 24),
-  {bsize=vec(13, 7)})  -- a little smaller
+  {bsize=vec(13, 7), hbox_offset = vec(-7, -6)})  -- a little smaller
  self.facing = chainmap('facing', kwargs, self)
 end
 function t_player:_moveif(step, facing)
@@ -1076,10 +1072,7 @@ function t_player:_moveif(step, facing)
  local unobstructed = nhbox:within(self.stage.box_px)
  local tiles = nhbox:maptiles(self.stage.map_origin)
  for tile in all(tiles) do
-  if band(tile.flags, 0b1) == 0 then
-   unobstructed = false
-   break
-  end
+  if (band(tile.flags, 0b1) == 0) unobstructed = false; break
  end
  for _,obj in pairs(self.stage.objects) do
   if obj != self then
@@ -1096,7 +1089,7 @@ function t_player:move()
  -- player movement
  local speed = 2
 
- if (speedshoes and btn(5)) speed = 3
+ if (hasdash and btn(5)) speed = 3
 
  self.moved = false
 
@@ -1177,17 +1170,16 @@ end
 
 local room = stage:extend{
 }
-function room:init(name)
+function room:init()
  mx, my, mw, mh = self.mapbox:unpack()
  self.map_origin = vec8(mx, my)*2
- self.box_map = bbox.pack(0, 0, mw, mh)
- self.box_cells = self.box_map*16
+ -- self.box_map = bbox.pack(0, 0, mw, mh)
+ self.box_cells = bbox.pack(0, 0, mw, mh)*16
  self.box_px = self.box_cells*8
 
  self.camfocus = self.startpos
  stage.init(self)
  self:add(choicer)
- -- stage.init(room)
  self.o_player = self:add(t_player(self.startpos))
  self:add(dialoger)
  local name = self.name
@@ -1326,17 +1318,17 @@ function r_complab:init(v)
 
  self:add(t_sign(vec16(1.5, 0.5), 010, vec_16_16)).lines = "two white lines of text are blown up to fill the entire screen.\rit's so huge you can read it from across the room.\ri wonder what it says."
 
- self:add(t_sign(vec8(11, 1), 112, vec8(2, 1), {bsize=vec_16_16})).lines = "looks like someone was planning a fundraising campaign for a video game.\rtoo bad they're just a troll."
+ self:add(t_sign(vec8(11, 1), 112, vec_16_8, {bsize=vec_16_16})).lines = "looks like someone was planning a fundraising campaign for a video game.\rtoo bad they're just a troll."
 
  self:add(t_sign(vec8(19, 1), 116, vec_8_8, {
     anchor=vec(4, 1), bsize=vec_16_16, tcol=15})).lines = "it's an off-ice computer.\ryou can tell because someone is running troll powerpoint. it ticked past the last slide though."
 
- self:add(t_sign(vec8(27, 1), 010, vec8(2, 1), {
+ self:add(t_sign(vec8(27, 1), 010, vec_16_8, {
     bsize=vec_16_16, paltab={[6]=3}})).lines = "wowie! looks like somebody's been flirting. in \f3green.\ractually, scrolling up, you see that only a few lines ago this conversation was antagonistic. at least nominally.\rand then... ho boy, some typically convoluted nonlinear nonsense, and then it looks like some pretty painful shutdowns?\rrough. but it looks like greeno here has salvaged things, somehow."
  -- o_computer4:addline(
  --  "due to technical limitations, the keyboard has also been flirting. in \f3green.")
 
- self:add(t_sign(vec16(15, 8), 050, vec8(2, 1), {tcol=012})).lines = "it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.\rthe sugar is arranged so as to be copyrightable intellectual property."
+ self:add(t_sign(vec16(15, 8), 050, vec_16_8, {tcol=012})).lines = "it's a cat-themed teapot. it seems out of place in this distinctly un-cat-themed room.\rthe sugar is arranged so as to be copyrightable intellectual property."
 
  self:add(t_chest('clabdollar',vec16(11.5, 3), 060, vec_oneone)).getlines = {
   "you got a fistfull of boondollars!\rit's important that sburb give these out to players for accomplishing game tasks, or else they wouldn't be motivated to play the game.\ralthough \"playing the game\" here pretty much means staying alive and ensuring you're not responsible for the annihilation of your species. you've gotta give people little wins."}
@@ -1344,7 +1336,7 @@ function r_complab:init(v)
  -- todo polish dialogue
  self:add(t_chest('clabfaygo',vec8(23, 20), 043, vec(1, 2))).getlines = "you got a faygo! a fun drink for fun people.\rit tastes like red pop."
 
- self:add(t_sign(vec(172, 194), 034, vec8(2, 1))).lines = "these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."
+ self:add(t_sign(vec(172, 194), 034, vec_16_8)).lines = "these cards really get lost in the floor. someone might slip and get hurt.\rthen again that's probably how the game would have ended anyway.\rsomeone has tried to play solitaire with them. you feel sad."
 
  self:add(t_sign(vec(142, 203), 032, vec_16_16)).lines = "it's a stray fiduspawn host plush.\ronce hatched, fidusuckers \f2will\f0 forcibly impregnate the nearest viable receptacle, so it's really important to have a few of these around."
 
@@ -1355,7 +1347,7 @@ function r_complab:init(v)
     obstructs=true
    })).lines = "there's suggestion in the trash. it just says the word \"alternia\".\ryou're glad that didn't get chosen. that would have been silly."
 
- self:add(t_sign(vec(195, 78), 110, vec8(2, 1))).lines = "someone has tied a noose around this plush dragon and left it lying on the floor.\rlooking around, you don't see anything nearby you could hang a rope from.\ror even, like, a chair to stand from."
+ self:add(t_sign(vec(195, 78), 110, vec_16_8)).lines = "someone has tied a noose around this plush dragon and left it lying on the floor.\rlooking around, you don't see anything nearby you could hang a rope from.\ror even, like, a chair to stand from."
 
  self:add(t_sign(vec16(0, 11), false, vec16(5, 5))).lines = "this corner of the room feels strangely empty and unoccupied.\ryes, both."
 
@@ -1458,10 +1450,10 @@ function r_lab:init(v)
   dialoger:enqueue("there is a switch here with a frog. flip it?", {callback=promptswitch}
   )
  end
- o_switch_frog = self:add(mob(vec8(7, 1.5), 126, vec8(2, 1)))
+ o_switch_frog = self:add(mob(vec8(7, 1.5), 126, vec_16_8))
 
  o_frog = t_sign(vec8(12, 4), 174, vec_16_16, {
-   bsize=vec8(2, 1),
+   bsize=vec_16_8,
    anchor=vec8(0,-1),
    flipx=true,
    obstructs=true
@@ -1582,10 +1574,10 @@ function r_stair:init(v)
    {"man", {
      "oh. there is a man here.",
      function()
-      if speedshoes then
+      if hasdash then
        dialoger:enqueue"you do not give him anything."
       else
-       speedshoes = true
+       hasdash = true
        sfx(000)
        dialoger:enqueue("he gave you an ❎ button. in addition to the rest.", {callback=function()
           focus:push'anim'
@@ -1601,14 +1593,14 @@ function r_stair:init(v)
            end)
           self.stage:schedule(60, function() focus:pop'anim' end)
          end})  -- end wink anim
-      end  -- end nospeedshoes else
+      end  -- end nohasdash else
      end  -- end man func
     }}
   }
   if chest_data['limoncello'] then
    add(choices, {"faygocello", {
       "...\ryou are right to hold me to account for my sins.",
-      function() state_flags['faygocelloshown'] = true end
+      function() state_flags['faygocellog'] = true end
      }, 10})
   end
   t_npc.interact(self, player, choices)
@@ -1620,7 +1612,7 @@ function r_stair:init(v)
   t_npc.update(self)
  end
 
- local o_vue = self:add(t_sign(vec8(10, 24), 122, vec8(2, 1), {
+ local o_vue = self:add(t_sign(vec8(10, 24), 122, vec_16_8, {
     anchor=vec8(0, -1),
     tcol=14
    }))
@@ -1673,19 +1665,17 @@ function r_turbine:init(v)
  function o_hole:interact(player)
   local hastileitem = chest_data['tilechest']
   if hastileitem and not state_flags['holefilled'] then
-   function promptbridge()
-    choicer:prompt{
-     {"yes", function()
-       state_flags['holefilled'] = true
-       sfx(003)
-      end},
-     {"no", function()
-       dialoger:enqueue"you never know when you might need it."
-      end}
-    }
-   end
-   dialoger:enqueue("make a bridge with the tile?", {callback=promptbridge}
-   )
+   dialoger:enqueue("make a bridge with the tile?", {callback=function ()
+      choicer:prompt{
+       {"yes", function()
+         state_flags['holefilled'] = true
+         sfx(003)
+        end},
+       {"no", function()
+         dialoger:enqueue"you never know when you might need it."
+        end}
+      }
+     end})
   else
    if state_flags['holefilled'] then
     dialoger:enqueue"there wasn't a tile here. there is now."
@@ -1777,7 +1767,7 @@ function r_johnroof:init(v)
 
  o_pogo:update()
 
- if state_flags['faygocelloshown'] then
+ if state_flags['faygocellog'] then
   local o_lamppost = self:add(t_sign(vec8(6, 9), 078, vec_8_8, {
      obstructs=true, tcol=14
     }))
@@ -1831,10 +1821,9 @@ function r_ocean:init(v)
  o_great.interact = closure(change_room_reset, r_turbine, {pos=vec(121, 16)})
  o_great.draw = drawgreat
 
- local o_stair = self:add(t_button(vec16(1, 4), false, vec_16_16, {
+ self:add(t_button(vec16(1, 4), false, vec_16_16, {
     obstructs=true
-   }))
- o_stair.interact = closure(change_room, r_chess)
+   })).interact = closure(change_room, r_chess)
 
  self:add(t_chest('oceanr',vec8(11, 9), 181, vec(2, 1))).getlines = "you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."
 
@@ -2001,8 +1990,7 @@ function intro_keyspr:draw()
 end
 
 local introscreen = stage:extend{
- greyscale={0, 0, 1, 5, 13, 6, 7},
- lines = {"assume the", "position"},
+ greyscale=split"0, 0, 1, 5, 13, 6, 7",
  held = 0
 }
 function introscreen:init(fadelen, onopen)
@@ -2045,7 +2033,7 @@ function introscreen:draw()
  end
 
  rectfill(0,0,128,128, 0)
- for i, s in ipairs(self.lines) do
+ for i, s in ipairs{"assume the", "position"} do
   local x = (128 - (#s * 8)) / 2
   s = "\^w\^t" .. s
   print(s, x, 16+(i-1)*14 + 2, 1)
@@ -2090,8 +2078,11 @@ function _init()
  else
   cur_room = introscreen(90, function()
     change_room(r_complab)
+    next_room:schedule(0, function()
+      o_player.cooldown = 20
+     end)
     focus:push'player'
-    o_player.cooldown = 20
+
    end)
  end
 end
