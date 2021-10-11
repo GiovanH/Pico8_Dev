@@ -9,6 +9,7 @@ __lua__
 local debug = (stat(6) == 'debug')
 
 local cur_room
+local next_room
 local o_player
 local score = 0
 
@@ -68,10 +69,20 @@ function chainmap(query, ...)
  end
 end
 
--- create a closure
+-- returns a function that runs fn with specified arguments
 function closure(fn, ...)
  local vars = {...}
  return (function() fn(unpack(vars)) end)
+end
+
+-- returns a table with all elements in tbl for which
+-- criteria returns a truthy value
+function filter(tbl, criteria)
+ local matches = {}
+ foreach(tbl, function(obj)
+   if (criteria(obj)) add(matches, obj)
+  end)
+ return matches
 end
 
 -- reset with one transparent color
@@ -721,7 +732,7 @@ dbg=function()
   local t=type(v)
   if t=="table" then
    if(d>5)return "[table]"
-   local props={}
+   local props={_=tostr(v)}
    for key,val in pairs(v) do
     props[key]=inspect(val,d+1)
    end
@@ -934,13 +945,13 @@ end
 function t_trigger:hittrigger(p)
  if (p.justtriggered) return
  if self.deststate then
-  cur_room = self.dest(self.deststate.pos)
-  o_player.facing = self.deststate.facing
+  change_room(self.dest, self.deststate.pos)
+  next_room:schedule(0, function() o_player.facing = self.deststate.facing end)
  else
-  cur_room = self.dest()  -- let room decide position
+  change_room(self.dest)
  end
  o_player.cooldown = 1
- cur_room:update()  -- align camera
+-- cur_room:update()  -- align camera
 end
 
 local t_player = isomob:extend{
@@ -1011,7 +1022,7 @@ function t_player:tryinteract()
  -- passive triggers
  local stillintrigger = false
  for _,obj in pairs(self.stage.objects) do
-  if (self.hbox:overlaps(obj.hbox) and obj.hittrigger) then
+  if (obj.hittrigger and self.hbox:overlaps(obj.hbox)) then
    stillintrigger = true
    obj:hittrigger(self)
    break
@@ -1022,11 +1033,12 @@ function t_player:tryinteract()
  if btnp(4) then
   local ibox = bbox(self.hbox.origin, vec_8_8):shift(facemap_move[self.facing]*8)
   -- self.ibox = ibox
+  local interactable = filter(self.stage.objects, function(o) return o.interact end)
   function p_dist(object)
    return (not object.pos) and 0 or self.pos:__sub(object.pos):mag()
   end
-  for _,obj in pairs(sorted(self.stage.objects, p_dist)) do
-   if (ibox:overlaps(obj.hbox) and obj.interact) then
+  for _,obj in pairs(sorted(interactable, p_dist)) do
+   if ibox:overlaps(obj.hbox) then
     if (obj:interact(self) != false) then
      self.cooldown += 2
      break
@@ -1101,8 +1113,6 @@ function scoreui:drawui()
 end
 
 local room = stage:extend{
- camfocus = nil,
- mapbox = nil
 }
 function room:init(startpos)
  mx, my, mw, mh = self.mapbox:unpack()
@@ -1112,7 +1122,8 @@ function room:init(startpos)
  self.box_px = self.box_cells*8
 
  self.camfocus = self.startpos
- stage.init(room)
+ stage.init(self)
+ -- stage.init(room)
  o_player = self:add(t_player(startpos or self.startpos))
  self:add(scoreui)
  -- self:add(choicer)
@@ -1165,9 +1176,10 @@ function room:draw()
   pset(mrconcatu(mous, 10))
   mous += ui_offset
 
-  prints('plr  ' .. tostr(o_player.pos), 0, 0)
-  prints('8' .. tostr(o_player.pos:__div(8)), 64, 0)
-  prints('room ' .. tostr(self.map_origin/16), 0, 8)
+  prints('plr  ' .. tostr(o_player.pos), 0, 8)
+  prints('8' .. tostr(o_player.pos:__div(8)), 64, 8)
+  prints('room ' .. tostr(self.map_origin/16), 0, 0)
+  prints(tostr(self), 64, 0)
   prints('mous ' .. tostr(mous), 0, 16)
   prints('8' .. tostr(mous:__div(8)), 64, 16)
  end
@@ -1175,6 +1187,17 @@ end
 
 -->8
 -- rooms
+
+local room_cache = {}
+function change_room(nroom, ...)
+ if (not room_cache[nroom]) room_cache[nroom] = nroom(...)
+ next_room = room_cache[nroom]
+end
+function change_room_reset(nroom, ...)
+ room_cache[nroom] = nil
+ change_room(nroom, ...)
+end
+
 local r_thegame = room:extend{
  startpos = vec8(8, 10),
  mapbox = bbox.fromxywh(0, 0, 1, 1)
@@ -1297,9 +1320,7 @@ function r_street:init(v)
  local o_hole = self:add(mob(vec8(29, 13), 009, vec_8_8))
  o_hole.tcol = 15
  o_hole.obstructs = true
- function o_hole:interact(p)
-  cur_room = r_thegame(vec8(13.5, 2))
- end
+ o_hole.interact = closure(change_room, r_thegame, vec8(13.5, 2))
 
  function newcloud(xpos)
   local cloud = self:add(sprparticle(072, vec(2,1),
@@ -1320,11 +1341,11 @@ function r_street:init(v)
   newcloud(8*x + rndr(0, 8))
  end
 
- self:add(t_trigger(vec8(0, 12), vec8(0.5, 3), r_closet))
+ -- self:add(t_trigger(vec8(0, 12), vec8(0.5, 3), r_closet))
 
  local o_door = self:add(mob(vec8(27, 5), nil, vec8(1,2)))
  function o_door:interact(p)
-  cur_room = r_arcade()
+  change_room(r_arcade)
  -- cur_room:update()
  end
  function o_door:draw()
@@ -1366,7 +1387,6 @@ function r_street:init(v)
  self:add(mob(vec8(12, 7), nil, vec(1,16), {obstructs=true}))
 
  function o_rfount:update()
-  if (self.stage != cur_room) return
   for i=1,4 do
    self.stage:add(particle(self._apos, vec(rndr(-1.5, 1.5), -rnd()), vec(0,.4), 10, 12, self.z))
   end
@@ -1464,7 +1484,7 @@ function r_arcade:init(v)
 
  local o_machin = self:add(isomob(vec8(8, 6), 044, vec8(1,2), {tcol=15}))
  function o_machin:interact(p)
-  cur_room = r_subgame()
+  change_room_reset(r_subgame)
  end
 -- dbg.print(self.objects, 'arcade postinit')
 end
@@ -1485,7 +1505,7 @@ function r_subgame:init(v)
 
  function self:update()
   room.update(self)
-  if (btnp(4)) cur_room = r_arcade(vec8(8, 7))
+  if (btnp(4)) change_room(r_arcade, vec8(8, 7))
  -- cur_room:update()
  end
 
@@ -1511,7 +1531,7 @@ end
 
 function _init()
  prettify_map()
- cur_room = r_thegame()
+ change_room(r_thegame)
  focus:push'player'
  if debug then
   menuitem(5,'toggle debug',function() debug = not debug end)
@@ -1519,11 +1539,17 @@ function _init()
 end
 
 function _update()
+ if next_room then
+  cur_room, next_room = next_room, nil
+  if debug then
+   dbg.watch(cur_room, "room")
+   dbg.watch(cur_room._tasks, "tasks")
+   dbg.watch(cur_room.objects, "objects")
+   dbg.watch(o_player, "player")
+  end
+ end
+ -- cur_room = next_room
  cur_room:update()
--- dbg.watch(cur_room, "room")
--- dbg.watch(cur_room._tasks, "tasks")
--- dbg.watch(cur_room.objects, "objects")
--- dbg.watch(o_player, "player")
 end
 
 function _draw()
