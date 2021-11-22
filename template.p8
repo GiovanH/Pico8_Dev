@@ -429,9 +429,9 @@ function particle:draw()
   pset(self.pos.x, self.pos.y, self.col)
  end
 end
-function sprparticle(spr_, size, ...)
+function sprparticle(spr, size, ...)
  local p = particle(...)
- p.spr = spr_
+ p.spr = spr
  p.size = size
  return p
 end
