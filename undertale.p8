@@ -6,6 +6,17 @@ __lua__
 
 -- global vars
 
+-- Enemy controller spawns, manages bullets
+-- game controller restores health between waves
+-- points from wavevs + grazes + overheal
+-- Enemy: start. Stop called by game.
+-- Coroutines
+-- No-hit bonus
+-- no-graze bonus
+-- bonus round w/ heal + score bullets
+-- t_bullet
+-- t_pattern
+
 local debug = true -- (stat(6) == 'debug')
 
 -->8
@@ -324,7 +335,8 @@ local mob = actor:extend{
  anim = nil,
  frame_len = 1,
  flipx = false,
- flipy = false
+ flipy = false,
+ tcol = nil
 }
 function mob:init(pos, ...)
  self.spr, self.size = ...
@@ -342,6 +354,7 @@ function mob:update()
  )
 end
 function mob:draw()
+ if (self.tcol != nil) paltt(self.tcol)
  -- caching unpack saves tokens
  local temp = (self.pos - self.anchor)  -- picotool :(
  local spx, spy = temp:unpack()

@@ -212,7 +212,7 @@ function tick_clock()
    end
   end
 
-  dumptable(clock)
+  -- dumptable(clock)
   
 end
 
