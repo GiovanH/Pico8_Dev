@@ -6,10 +6,11 @@ __lua__
 
 -- global vars
 
--- Enemy controller spawns, manages bullets
--- game controller restores health between waves
+-- game controller restores health between waves, 
+--  picks and starts patterns
+-- Pattern controller spawns, manages bullets
 -- points from wavevs + grazes + overheal
--- Enemy: start. Stop called by game.
+-- Pattern: start. Stop called by game.
 -- Coroutines
 -- No-hit bonus
 -- no-graze bonus
@@ -244,6 +245,7 @@ function rndr(a, b) return rnd(b - a) + a end
 -- random int [0, n)
 function rndi(n) return flr(rnd(n)) end
 
+-- random choice from table
 function rndc(t) return t[1+rndi(#t)] end
 
 --- sort list by keyfunc
@@ -671,52 +673,66 @@ function focus:pop(expected)
  return r
 end
 
-local o_soul = mob(vec(64, 64), 0, vec(7,7), {
- dynamic=true
-})
-o_soul.arena = nil
-o_soul.invuln = 0
-function o_soul:update()
- -- fit self to arena
+local t_soul = mob:extend{
+ arena = nil,
+ invuln = 0,
+ dynamic = true,
+ hp = 20
+}
+function t_soul:_moveif(step)
+ local npos = self.pos + step
+ local nhbox = self:get_hitbox(npos)
+ local unobstructed = nhbox:within(self.arena.hbox)
+ for _,obj in pairs(self.stage.objects) do
+  if obj != self then
+   if nhbox:overlaps(obj.hbox) then
+    if (obj.obstructs) unobstructed = false
+   end
+  end
+ end
+ -- if (facing) self.facing = facing
+ if unobstructed then
+  self.pos = npos
+  -- self.moved = true
+ end
+end
+function t_soul:move()
+ -- player movement
+ local speed = 1
+ -- lrudox
+ for x=1,speed do
+  if btn(0) then
+   self:_moveif(vec(-1, 0))
+  elseif btn(1) then
+   self:_moveif(vec_x1)
+  end
+  if btn(2) then
+   self:_moveif(vec(0, -1))
+  elseif btn(3) then
+   self:_moveif(vec_y1)
+  end
+ end
 
- -- todo
+end
+function t_soul:update()
+ -- fit self to arena
  if not self.hbox:within(self.arena.hbox) then
   self.pos = self.arena.hbox:center()
  end
 
- -- player movement
- local vright = vec(1, 0)
- local vdown = vec(0, 1)
- local speed = 2
+ -- Collision
+ for _,obj in pairs(self.stage.objects) do
+  if obj != self then
+   if self.hbox:overlaps(obj.hbox) then
+    -- If object has onhit, call onhit
+    -- Bullet may choose to call soul:hit to deal damage
+    -- If no damage delt, soul:hit returns false
+    if (obj.onhit) obj:onhit(self)
+   end
+  end
+ end
 
- local npos = self.pos
- function moveif()
-  local nbox = bbox(
-   npos, self.size)
-  if nbox:within(self.arena.hbox) then
-   self.pos = npos
-  else
-   npos = self.pos
-  end
- end
- if (btn(0)) then
-  for x=1,speed do
-   npos -= vright moveif()
-  end
- elseif (btn(1)) then
-  for x=1,speed do
-   npos += vright moveif()
-  end
- end
- if (btn(2)) then
-  for x=1,speed do
-   npos -= vdown moveif()
-  end
- elseif (btn(3)) then
-  for x=1,speed do
-   npos += vdown moveif()
-  end
- end
+ self:move()
 
  if self.invuln > 0 then
   self.invuln -= 1
@@ -724,19 +740,18 @@ function o_soul:update()
 
  mob.update(self)
 end
-
-function o_soul:hit(dmg)
+function t_soul:dmghit(dmg)
  if self.invuln > 0 then
   return false
  else
+  self.hp -= dmg
+  -- TODO gameover logic
   self.invuln = 12
   sfx(00)
   return true
  end
 end
-
-function o_soul:draw()
- print(self.invuln, self.pos + vec(0, -8))
+function t_soul:draw()
  if self.invuln > 0 then
   self.anim = {0, false}
  else
@@ -744,19 +759,28 @@ function o_soul:draw()
  end
  mob.draw(self)
 end
+function t_soul:drawui()
+ local perc = self.hp / 20
+ rectfill(mrconcatu(bbox.fromxywh(2, 120, 60*perc, 8), 8))
+ rect(mrconcatu(bbox.fromxywh(2, 120, 60, 8), 10))
+end
 
-local t_testbullet = mob:extend{
+local b_test = mob:extend{
  ttl = 200,
  anim = {016, 017, 018, 019},
  name = 'bullet',
  frame_len = 2,
  dynamic = true
 }
-function t_testbullet:init(pos)
+function b_test:init(pos)
  self.pos = pos
  mob.init(self, self.pos, false, vec(5, 5))
 end
-function t_testbullet:update()
+function b_test:onhit(player)
+ local didhit = player:dmghit(1)
+ if (didhit) self:destroy()
+end
+function b_test:update()
  self.pos += vec(0, 0.6)
  printh(self._findex)
  if self._findex == 1 then
@@ -771,60 +795,77 @@ function t_testbullet:update()
   self:destroy()
  end
 
- if self.hbox:overlaps(o_soul.hbox) then
-  local didhit = o_soul:hit(1)
-  if (didhit) self:destroy()
- end
-
  mob.update(self)
-
 end
 
-local o_tpattern = mob(vec(64, 16), 001)
-o_tpattern.name = 'pattern'
-o_tpattern.ttover = 0
-o_tpattern.bullets = {}
-
-function o_tpattern:start_turn()
- self.ttover = 200
+local pat_test = entity:extend{
+ name = "test pattern",
+ ttover = 0,
+ lifespan = 200
+}
+function pat_test:init(arena)
+ entity.init(self)
+ self.arena = arena
+ self.children = {}
+ self.ttl = self.lifespan
 end
-function o_tpattern:draw()
- local perc = self.ttover / 200
+
+function pat_test:drawui()
+ local perc = self.ttl / self.lifespan
  line(0, 0, 128*perc, 0, 10)
- mob.draw(self)
 end
-function o_tpattern:update()
 
- if (debug and btn(4)) self:start_turn()
-
- if (self.ttover > 0) then
-  -- our turn
-  if self.stage.mclock % 20 == 0 then
-   -- fire new bullet
-   printh('fire')
-   local newbullet = t_testbullet(vec(
-    rndr(self.arena.hbox.x0, self.arena.hbox.x1-4),
-    self.arena.hbox.y0
-   ))
-   self.stage:add(newbullet)
-  end
-  self.ttover -= 1
+function pat_test:destroy()
+ foreach(self.children, function(c) c:destroy() end)
+ entity.destroy(self)
+end
+function pat_test:update()
+ entity.update(self)
+ -- our turn
+ if self.stage.mclock % 20 == 0 then
+  -- fire new bullet
+  printh('fire')
+  local newbullet = b_test(vec(
+   rndr(self.arena.hbox.x0, self.arena.hbox.x1-4),
+   self.arena.hbox.y0
+  ))
+  self.stage:add(newbullet)
+  add(self.children, newbullet)
  end
 end
 
-local o_arena = mob(vec(32,32), 0, vec(64, 64))
-function o_arena:update()
+local t_arena = mob:extend{
+ cur_pattern = nil,
+ z = -1
+}
+function t_arena:update()
  -- move arena with p2
  -- if (btn(0,1)) then self.shape:shift(vec(-8, 0))
  -- elseif (btn(1,1)) then self.shape:shift(vec(8, 0)) end
  -- if (btn(2,1)) then self.shape:shift(vec(0, -8))
  -- elseif (btn(3,1)) then self.shape:shift(vec(0, 8)) end
+ if (self.cur_pattern and self.cur_pattern._doomed) self.cur_pattern = nil
+ if (debug and self.cur_pattern == nil and btnp(4)) self:new_wave()
 end
-function o_arena:draw()
+function t_arena:new_wave()
+ -- Pick random pattern
+ -- Add new pattern to stage
+ -- Set cur_pattern to new pattern
+ -- Wait for cur_pattern to die
+ self.cur_pattern = self.stage:add(rndc{
+  pat_test
+ }(self))
+end
+function t_arena:draw()
  rect(mrconcat({self.hbox:unpack()}, 3))
  rect(mrconcat({self.hbox:outline(1):unpack()}, 11))
 end
-o_arena.z = -1
+function t_arena:drawui()
+ if (self.cur_pattern) do
+  print(self.cur_pattern.name, 0, 0)
+  print(self.cur_pattern._doomed, 0, 8)
+ end
+end
 
 bg = entity()
 function bg:draw()
@@ -836,19 +877,20 @@ bg.z = -100
 --pico-8 builtins
 
 function _init()
+ local o_soul = t_soul(vec(64, 64), 0, vec(7,7))
+ local o_arena = t_arena(vec(32,32), 0, vec(64, 64))
  o_soul.arena = o_arena
- o_tpattern.arena = o_arena
 
  teststage = stage()
  teststage:add(bg)
  teststage:add(o_arena)
  teststage:add(o_soul)
- teststage:add(o_tpattern)
+ -- teststage:add(o_tpattern)
 end
 
 function _update()
  teststage:update()
- -- dbg.watch(teststage,"stage")
+ dbg.watch(teststage,"stage")
  -- dbg.watch(o_soul,"soul")
  -- dbg.watch(o_tpattern,"pattern")
 end
