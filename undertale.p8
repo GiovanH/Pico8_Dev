@@ -213,7 +213,6 @@ end
 function chainmap(query, ...)
  for i, o in ipairs{...} do
   local v = o[query]
-  printa(query, o, v)
   if (v != nil) return v
  end
 end
@@ -433,16 +432,19 @@ local entity = obj:extend{
 }
 function entity:init(kwargs)
  kwargs = kwargs or {}
- self.ttl = kwargs.ttl or self.ttl
- self.z = kwargs.z or self.z
+ for prop in all{'ttl', 'z'} do
+  self[prop] = chainmap(prop, kwargs, self)
+ end
+ -- self.ttl = kwargs.ttl or self.ttl
+ -- self.z = kwargs.z or self.z
  if (self.coupdate) self._coupdate = cocreate(self.coupdate, self)
 end
 function entity:update()
+ if (self._coupdate) assert(coresume(self._coupdate, self))
  if self.ttl then
   self.ttl -= 1
   if (self.ttl < 1) self:destroy()
  end
- if (self._coupdate) assert(coresume(self._coupdate, self))
 end
 function entity:destroy() self._doomed = true end
 
@@ -602,7 +604,6 @@ end
 local stage = obj:extend{}
 function stage:init()
  self.objects = {}
- self.uiobjects = {}
  self.mclock = 0
  self.cam = vec()  -- use for map offset
  self._tasks = {}
@@ -686,7 +687,6 @@ local choicer = entity:extend{
  selected = 1,  -- index of selected opt
 }
 function choicer:init(choices, exopts)
- printh("new choicer")
  exopts = exopts or {}
  self.choices = choices
 
@@ -841,8 +841,7 @@ local b_test = mob:extend{
  dynamic = true
 }
 function b_test:init(pos)
- self.pos = pos
- mob.init(self, self.pos, false, vec(5, 5))
+ mob.init(self, pos, false, vec(5, 5))
 end
 function b_test:onhit(player)
  local didhit = player:dmghit(1)
@@ -850,7 +849,6 @@ function b_test:onhit(player)
 end
 function b_test:update()
  self.pos += vec(0, 0.6)
- printh(self._findex)
  if self._findex == 1 then
   self.hbox_offset = vec(1, 0)
   self.bsize = vec(4, 6)
@@ -866,41 +864,52 @@ function b_test:update()
  mob.update(self)
 end
 
-local pat_test = entity:extend{
- name = "test pattern",
- ttover = 0,
+local t_pattern = entity:extend{
+ name = "??? pattern",
  lifespan = 200
 }
-function pat_test:init(arena)
+function t_pattern:init(arena)
  entity.init(self)
  self.arena = arena
  self.children = {}
  self.ttl = self.lifespan
 end
-
-function pat_test:drawui()
- local perc = self.ttl / self.lifespan
- line(0, 0, 128*perc, 0, 10)
+function t_pattern:drawui()
+ line(0, 0, 128*(self.ttl / self.lifespan), 0, 10)
+end
+function t_pattern:addchild(newbullet)
+ self.stage:add(newbullet)
+ add(self.children, newbullet)
 end
 
+local pat_rest = t_pattern:extend{
+ name = "rest pattern",
+ lifespan = 60
+}
+
+local pat_test = t_pattern:extend{
+ name = "test pattern",
+ lifespan = 200
+}
 function pat_test:destroy()
  foreach(self.children, function(c) c:destroy() end)
- entity.destroy(self)
+ t_pattern.destroy(self)
 end
 function pat_test:update()
- entity.update(self)
+ t_pattern.update(self)
+ if (self._doomed) return
  -- our turn
  if self.stage.mclock % 20 == 0 then
-  -- fire new bullet
-  printh('fire')
-  local newbullet = b_test(vec(
-    rndr(self.arena.hbox.x0, self.arena.hbox.x1-4),
-    self.arena.hbox.y0
-   ))
-  self.stage:add(newbullet)
-  add(self.children, newbullet)
+  self:addchild(b_test(vec(
+     rndr(self.arena.hbox.x0, self.arena.hbox.x1-4),
+     self.arena.hbox.y0
+    )))
  end
 end
+
+local lib_patterns = {
+ pat_test
+}
 
 local t_arena = mob:extend{
  cur_pattern = nil,
@@ -913,26 +922,40 @@ function t_arena:update()
  -- if (btn(2,1)) then self.shape:shift(vec(0, -8))
  -- elseif (btn(3,1)) then self.shape:shift(vec(0, 8)) end
  if (self.cur_pattern and self.cur_pattern._doomed) self.cur_pattern = nil
- if (debug and self.cur_pattern == nil and btnp(4)) self:new_wave()
+
+ if (self.stage.o_soul.hp < 0) then
+  -- game over
+  cur_stage = st_mainmenu()
+ end
+
+ entity.update(self)
+end
+function t_arena:coupdate()
+ while true do
+  while (self.cur_pattern) do yield() end
+  printh("resting")
+  self.cur_pattern = self.stage:add(pat_rest(self))
+  while (self.cur_pattern) do yield() end
+  self:new_wave()
+ end
 end
 function t_arena:new_wave()
  -- Pick random pattern
  -- Add new pattern to stage
  -- Set cur_pattern to new pattern
  -- Wait for cur_pattern to die
- self.cur_pattern = self.stage:add(rndc{
-   pat_test
-  }(self))
+ self.cur_pattern = self.stage:add(rndc(lib_patterns)(self))
 end
 function t_arena:draw()
  rect(mrconcat({self.hbox:unpack()}, 3))
  rect(mrconcat({self.hbox:outline(1):unpack()}, 11))
 end
 function t_arena:drawui()
+ local label = "undefined"
  if (self.cur_pattern) then
-  print(self.cur_pattern.name, 0, 0)
-  print(self.cur_pattern._doomed, 0, 8)
+  label = self.cur_pattern.name
  end
+ print(label, 0, 1)
 end
 
 -- bg = entity()
@@ -974,13 +997,13 @@ st_game = stage:extend{}
 function st_game:init()
  stage.init(self)
 
- local o_soul = t_soul(vec(64, 64), 0, vec(7,7))
+ self.o_soul = t_soul(vec(64, 64), 0, vec(7,7))
  local o_arena = t_arena(vec(32,32), 0, vec(64, 64))
- o_soul.arena = o_arena
+ self.o_soul.arena = o_arena
 
  -- self:add(bg)
  self:add(o_arena)
- self:add(o_soul)
+ self:add(self.o_soul)
 end
 
 -->8
