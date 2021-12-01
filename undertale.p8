@@ -255,6 +255,7 @@ function rndc(t) return t[1+rndi(#t)] end
 function sort(list, keyfunc)
  for i = 2, #list do
   for j = i, 2, -1 do
+   printa(keyfunc, keyfunc(list[j-1]), keyfunc(list[j]))
    if keyfunc(list[j-1]) > keyfunc(list[j]) then
     list[j], list[j-1] = list[j-1], list[j]
    else
@@ -268,6 +269,14 @@ function sorted(list, keyfunc)
  local temp = {unpack(list)}
  sort(temp, keyfunc)
  return temp
+end
+
+function shuffle_table(table)
+  -- do a fisher-yates shuffle
+  for i = #table, 1, -1 do
+    local j = flr(rnd(i)) + 1
+    table[i], table[j] = table[j], table[i]
+  end
 end
 
 -- clamp query between min/max
@@ -481,7 +490,7 @@ local actor = entity:extend{
  z_is_y = false,  -- domain: camera perspective
 }
 function actor:init(pos, spr_, size, kwargs)
- entity.init(self)
+ entity.init(self, kwargs)
  kwargs = kwargs or {}
  self.pos, self.spr, self.size = pos, spr_, size
  for prop in all{'anchor', 'offset', 'z_is_y', 'tcol', 'paltab'} do
@@ -779,10 +788,11 @@ function t_soul:_moveif(step)
  -- if (facing) self.facing = facing
  if unobstructed then
   self.pos = npos
- -- self.moved = true
+  self.moved = true
  end
 end
 function t_soul:move()
+ self.moved = false
  -- player movement
  local speed = 1
  -- lrudox
@@ -810,10 +820,10 @@ function t_soul:update()
  for _,obj in pairs(self.stage.objects) do
   if obj != self then
    if self.hbox:overlaps(obj.hbox) then
-    -- If object has onhit, call onhit
+    -- If object has oncollide, call oncollide
     -- Bullet may choose to call soul:hit to deal damage
     -- If no damage delt, soul:hit returns false
-    if (obj.onhit) obj:onhit(self)
+    if (obj.oncollide) obj:oncollide(self)
    end
   end
  end
@@ -888,7 +898,7 @@ function t_graze:update()
  for _,obj in pairs(self.stage.objects) do
   if obj != self then
    if self.hbox:overlaps(obj.hbox) then
-    if (obj.onhit and not obj._grazed) then
+    if (obj.oncollide and obj:canhit(self) and not obj._grazed) then
      self.soul:ongraze(obj)
      obj._grazed = true
     end
@@ -896,26 +906,46 @@ function t_graze:update()
   end
  end
 end
+
+
+local t_warnbox = mob:extend{}
+function t_warnbox:draw()
+  rect(mrconcatu(self.hbox:grow(vec_noneone), 8))
+ mob.draw(self)
+end
+
 -- Bullets
 
 local t_bullet = mob:extend{
  dynamic = true,
  ttl = 200,
  dmg = 1,
- hbox = vec(5, 5),
+ bsize = vec(5, 5),
  vel = vec(0, 0.3),
- acc = vec(0, 0)
+ acc = vec(0, 0),
+ dmg_color = nil
 }
 function t_bullet:init(pos)
- mob.init(self, pos, false, self.hbox)
+ mob.init(self, pos, self.spr, self.size)
+ self.dmg_color = rndc{nil, "blue", "orange"}
 end
-function t_bullet:onhit(player)
- local didhit = player:dmghit(self.dmg)
- if (didhit) self:destroy()
+function t_bullet:canhit(player)
+ if (self.dmg_color == "blue" and not player.moved) return false
+ if (self.dmg_color == "orange" and player.moved) return false
+ return true
+end
+function t_bullet:oncollide(player)
+ if (self:canhit(player)) do
+  local didhit = player:dmghit(self.dmg)
+  if (didhit) self:destroy()
+ end
 end
 function t_bullet:update()
  self.pos += self.vel
  self.vel += self.acc
+
+ if (self.dmg_color == "blue") self.paltab = {[7]=12}
+ if (self.dmg_color == "orange") self.paltab = {[7]=9}
 
  mob.update(self)
 end
@@ -925,7 +955,7 @@ local b_fall = t_bullet:extend{
  anim = {016, 017, 018, 019},
  frame_len = 4,
  dmg = 1,
- hbox = vec(5, 5),
+ bsize = vec(5, 5),
  vel = vec(0, 0.3)
 }
 function b_fall:update()
@@ -945,11 +975,13 @@ function b_fall:update()
 end
 
 local b_mine = t_bullet:extend{
- ttl = 300,
+ ttl = 400,
  anim = {001},
  frame_len = 4,
  dmg = 1,
- hbox = vec(4, 4),
+ bsize = vec(4),
+ anchor = vec(-2),
+ hbox_offset = vec(-2),
  vel = vec(0, 0)
 }
 
@@ -958,7 +990,7 @@ local b_thrown = t_bullet:extend{
  anim = {016, 017, 018, 019},
  frame_len = 4,
  dmg = 1,
- hbox = vec(4, 4),
+ bsize = vec(4, 4),
  hbox_offset = vec(1, 1),
  vel = vec(0, 0)
 }
@@ -1058,20 +1090,28 @@ local pat_miner = t_pattern:extend{
 }
 function pat_miner:coupdate()
  local arena = self.stage.arena
- local r = 50
- for i = 1, 6 do
-  self:addchild(b_mine(vec(
-     64 + (i - 3)*8,
-     64 - 32
-    )))
-  yield()
+ local o_soul = self.stage.o_soul
+ local warntime = 45
+ local vecs = {}
+ for x = 0, 3 do
+  for y = 0, 3 do
+   add(vecs, (vec(0.5)+vec(x, y))/4)
+  end
  end
- for i = 1, 6 do
-  self:addchild(b_mine(vec(
-     64 + (i - 3)*16,
-     64 + 28
-    )))
-  yield()
+ shuffle_table(vecs)
+ for v in all(vecs) do
+   printa(arena.hbox)
+   bigbox = bbox(
+    arena.hbox.origin + v:dotp(arena.hbox.size),
+    vec(0,0)
+   ):outline(8)
+
+   -- if not o_soul.hbox:overlaps(bigbox) then
+   self:addchild(t_warnbox(bigbox.origin, false, bigbox.size, {ttl=warntime}))
+    self.stage:schedule(warntime, closure(self.addchild, self, b_mine(bigbox:center())))
+   -- end
+   yieldn(4)
+
  end
 end
 
