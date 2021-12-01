@@ -14,7 +14,7 @@ __lua__
 
 -- global vars
 local o_player
-local debug = (stat(6) == 'debug')
+local debug = false -- (stat(6) == 'debug')
 
 -- game state flags
 local hasdash = debug
@@ -857,7 +857,7 @@ local t_chest = t_sign:extend{
  obstructs=true,
  bsize = vec_16_8,
  anchor = vec8(0,-1),
- getlines = "you got a[] [???]",
+ -- getlines = "you got a[] [???]",
  emptylines = {}
 }
 function t_chest:init(id, pos, ispr, isize, itcol)
@@ -1723,7 +1723,10 @@ function r_turbine:init(v)
     facing='d',
     pos=vec(24, 121)
    }))
- self:add(t_trigger(vec8(14, 0), vec8(2, .5), r_ocean))
+ self:add(t_trigger(vec8(14, 0), vec8(2, .5), r_ocean,{
+    facing='d',
+    pos=vec(104, 40)
+   }))
  self:add(t_trigger(vec8(31.5,4), vec8(.5, 2), r_johnroof,{
     facing='r',
     pos=vec(16, 98)
@@ -1751,7 +1754,9 @@ function r_johnroof:init(v)
 
  self:add(t_chest('limoncello',vec8(13, 4), 176, vec_oneone)).getlines = "it's a glass of... what is that, faygo cut with limoncello?\ra drink for the direst of circumstances."
 
- local o_pogo = self:add(t_sign(vec8(12, 9), 078, vec_16_16, {bsize=vec_8_8, obstructs=true, tcol=3}))
+ local o_pogo = self:add(t_sign(vec8(13, 10), 078, vec_16_16, {
+  bsize=vec_8_8, obstructs=true, tcol=3, anchor=vec8(-.5, -1.5)
+ }))
  o_pogo.lines = {
   "thanks to the miracle of digital technology, the pogo ride has been effortlessly preserved to the exact specifications of the designer, a feat unheard of in any previous era.\rbut it doesn't work anymore.",
   function()
@@ -1765,12 +1770,16 @@ function r_johnroof:init(v)
   mob.update(self)
  end
 
- o_pogo:update()
+ -- o_pogo:update()
 
- if state_flags['faygocellog'] then
   local o_lamppost = self:add(t_sign(vec8(6, 9), 078, vec_8_8, {
      obstructs=true, tcol=14
     }))
+  function o_lamppost:update()
+   if (not state_flags['faygocellog']) return
+   t_sign.update(self)
+  end
+
   o_lamppost.lines = {
    function() sfx(007) end,
    "it's the \falamppost\f7.\rquit the game?",
@@ -1786,9 +1795,10 @@ function r_johnroof:init(v)
   }
 
   function o_lamppost:draw()
+   if (not state_flags['faygocellog']) return
    paltt(self.tcol)
    spr(023, self.pos:unpack())
-   spr(022, self.pos:__sub(0, 4):unpack())
+   spr(022, self.pos:__sub(0, 32):unpack())
    local line_ = bbox(self.pos:__add(3, -25), vec(0, 25))
    line(mrconcatu(line_, 0))
    line(mrconcatu(line_:shift(vec_x1), 5))
@@ -1798,8 +1808,6 @@ function r_johnroof:init(v)
     pset(self.pos.x+3, self.pos.y-28, 9)
     if (rnd() < .5) self.flicker = false
    end
-  -- mob.drawdebug(self)
-  end
  end
 
  self:add(t_trigger(vec8(1, 11), vec8(0.5, 6), r_turbine))
@@ -1823,7 +1831,7 @@ function r_ocean:init(v)
 
  self:add(t_button(vec16(1, 4), false, vec_16_16, {
     obstructs=true
-   })).interact = closure(change_room, r_chess)
+   })).interact = closure(change_room_reset, r_chess)
 
  self:add(t_chest('oceanr',vec8(11, 9), 181, vec(2, 1))).getlines = "you got a boonbuck! through the magic of game mechanics, you can exchange this at any time for one million boondollars.\rgiven that boondollars are physical coins, making the exchange would immediately bury you alive. most people choose not do to this.\ran enterprising sburb player might even weaponize this mechanic."
 
@@ -2072,10 +2080,13 @@ function _init()
 
  prettify_map()
  -- starting room
- if debug then
-  change_room(r_johnroof)
-  focus:push'player'
- else
+ -- if debug then
+ --  change_room(r_johnroof)
+ --  state_flags['holefilled'] = true
+ --  state_flags['faygocellog'] = true
+ --  state_flags['frog_flipped'] = true
+ --  focus:push'player'
+ -- else
   cur_room = introscreen(90, function()
     change_room(r_complab)
     next_room:schedule(0, function()
@@ -2084,7 +2095,7 @@ function _init()
     focus:push'player'
 
    end)
- end
+ -- end
 end
 
 function _update()
