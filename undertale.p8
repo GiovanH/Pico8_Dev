@@ -255,7 +255,6 @@ function rndc(t) return t[1+rndi(#t)] end
 function sort(list, keyfunc)
  for i = 2, #list do
   for j = i, 2, -1 do
-   printa(keyfunc, keyfunc(list[j-1]), keyfunc(list[j]))
    if keyfunc(list[j-1]) > keyfunc(list[j]) then
     list[j], list[j-1] = list[j-1], list[j]
    else
@@ -898,7 +897,7 @@ function t_graze:update()
  for _,obj in pairs(self.stage.objects) do
   if obj != self then
    if self.hbox:overlaps(obj.hbox) then
-    if (obj.oncollide and obj:canhit(self) and not obj._grazed) then
+    if (obj.oncollide and obj:canhit(self.soul) and not obj._grazed) then
      self.soul:ongraze(obj)
      obj._grazed = true
     end
@@ -920,12 +919,17 @@ local t_bullet = mob:extend{
  dynamic = true,
  ttl = 200,
  dmg = 1,
+ hbox_offset = 'CENTER',
+ anchor = 'CENTER',
  bsize = vec(5, 5),
  vel = vec(0, 0.3),
  acc = vec(0, 0),
  dmg_color = nil
 }
 function t_bullet:init(pos)
+ -- Center
+ if (self.hbox_offset == 'CENTER') self.hbox_offset = self.bsize / -2
+ if (self.anchor == 'CENTER') self.anchor = self.size / -2
  mob.init(self, pos, self.spr, self.size)
  self.dmg_color = rndc{nil, "blue", "orange"}
 end
@@ -956,6 +960,8 @@ local b_fall = t_bullet:extend{
  frame_len = 4,
  dmg = 1,
  bsize = vec(5, 5),
+ hbox_offset = vec(1, 0),
+ anchor = vec(0),
  vel = vec(0, 0.3)
 }
 function b_fall:update()
@@ -975,13 +981,14 @@ function b_fall:update()
 end
 
 local b_mine = t_bullet:extend{
- ttl = 400,
+ ttl = 800,
  anim = {001},
  frame_len = 4,
  dmg = 1,
+ size = vec(4),
  bsize = vec(4),
- anchor = vec(-2),
- hbox_offset = vec(-2),
+ -- anchor = vec(-2),
+ -- hbox_offset = vec(-2),
  vel = vec(0, 0)
 }
 
@@ -990,8 +997,9 @@ local b_thrown = t_bullet:extend{
  anim = {016, 017, 018, 019},
  frame_len = 4,
  dmg = 1,
- bsize = vec(4, 4),
- hbox_offset = vec(1, 1),
+ size = vec(6),
+ bsize = vec(4),
+ -- hbox_offset = vec(1, 1),
  vel = vec(0, 0)
 }
 function b_thrown:init(pos, delay)
@@ -1101,13 +1109,14 @@ function pat_miner:coupdate()
  shuffle_table(vecs)
  for v in all(vecs) do
    printa(arena.hbox)
-   bigbox = bbox(
+   warnbox = bbox(
     arena.hbox.origin + v:dotp(arena.hbox.size),
     vec(0,0)
-   ):outline(8)
+   ):outline(5)
 
+   local bigbox = warnbox:outline(2)
    -- if not o_soul.hbox:overlaps(bigbox) then
-   self:addchild(t_warnbox(bigbox.origin, false, bigbox.size, {ttl=warntime}))
+   self:addchild(t_warnbox(warnbox.origin, false, warnbox.size, {ttl=warntime}))
     self.stage:schedule(warntime, closure(self.addchild, self, b_mine(bigbox:center())))
    -- end
    yieldn(4)
@@ -1116,10 +1125,10 @@ function pat_miner:coupdate()
 end
 
 local lib_patterns = {
+ pat_miner,
  pat_rain,
  pat_circthrow,
- pat_randthrow,
- pat_miner
+ pat_randthrow
 }
 
 -- Stage
