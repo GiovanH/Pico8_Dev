@@ -363,7 +363,7 @@ function actor:draw(frame)
  if self.anim then
   local mclock = self.ttl or self.stage.mclock
   local findex = (flr(mclock/self.frame_len) % #self.anim) +1
-  local frame = self.anim[findex]
+  frame = self.anim[findex]
   self._frame, self._findex = frame, findex
  end
  if (frame != false and frame != nil) spr(frame, spx, spy, spw, sph, self.flipx, self.flipy)
