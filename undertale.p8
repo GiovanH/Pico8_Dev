@@ -8,15 +8,8 @@ __lua__
 
 -- game controller restores health between waves,
 --  picks and starts patterns
--- Pattern controller spawns, manages bullets
--- points from wavevs + grazes + overheal
--- Pattern: start. Stop called by game.
--- Coroutines
 -- No-hit bonus
 -- no-graze bonus
--- bonus round w/ heal + score bullets
--- t_bullet
--- t_pattern
 -- hp delta with juicy animated changes
 
 local debug = true  -- (stat(6) == 'debug')
@@ -365,6 +358,22 @@ function vec:norm()
  -- Nick Vogt's fast normalization
  local ratio2 = ratio1 * (1.29289 - (ax + ay) * ratio1 * 0.29289)
  return self:dotp(ratio2, ratio2)
+end
+
+-- Draw the vector connecting the points in path
+function draw_beam(path, origin, theta, color)
+ local prev = nil
+ for i, v in ipairs(path) do
+  local x, y = v:unpack()
+  local thisv = origin + vec(
+   cos(theta)*x-sin(theta)*y,
+   sin(theta)*x+cos(theta)*y
+  )
+  if prev then
+   line(mrconcatu(thisv, mrconcatu(prev, color)))
+  end
+  prev = thisv
+ end
 end
 
 -- 2d bounding box
@@ -766,7 +775,7 @@ local t_soul = mob:extend{
  hp = 20,
  sp = 0,
  maxsp = 20,
- z = 5,
+ z = 7,
  isdemo = false,
  offset = vec(-3, -3),
  hbox_offset = vec(-3,-3)
@@ -885,7 +894,7 @@ end
 
 local t_graze = mob:extend{
  dynamic = true,
- z = 6,
+ z = t_soul.z + 1,
  offset = vec(-7),
  hbox_offset = vec(-7)
 }
@@ -920,6 +929,7 @@ end
 -- Bullets
 
 local t_bullet = mob:extend{
+ z = 6,
  dynamic = true,
  ttl = 200,
  dmg = 1,
@@ -971,7 +981,8 @@ function t_bullet:drawdebug()
 end
 
 local b_fall = t_bullet:extend{
- ttl = 200,
+ z = 4,
+ ttl = 300,
  anim = {016, 017, 018, 019},
  frame_len = 4,
  dmg = 1,
@@ -1044,19 +1055,13 @@ function b_missile:update()
  self.v_towards = v_towards
 end
 function b_missile:draw()
- local rasters = {
+ local path = {
+  vec(2, 0),
   vec(-6, 3),
   vec(-6, -3),
   vec(2, 0)
  }
- local theta = atan2(self.v_towards:unpack())
- local prev = self.pos + vec(0)
- for i, v in ipairs(rasters) do
-  local x, y = v:unpack()
-  local thisv = self.pos + vec(cos(theta)*x-sin(theta)*y, sin(theta)*x+cos(theta)*y)
-  line(mrconcatu(thisv, mrconcatu(prev, 7)))
-  prev = thisv
- end
+ draw_beam(path, self.pos, atan2(self.v_towards:unpack()), 7)
 t_bullet.draw(self)
 end
 
@@ -1117,7 +1122,7 @@ function pat_rain:coupdate()
  while true do
   self:addchild(b_fall(vec(
      rndr(arena.hbox.x0, arena.hbox.x1-4),
-     arena.hbox.y0
+     arena.hbox.y0-8
     )))
   yieldn(20)
  end
@@ -1205,7 +1210,7 @@ local pat_missile = t_pattern:extend{
  lifespan = 8 * 60
 }
 function pat_missile:coupdate()
- self:addchild(b_missile(vec(0, rndr(0,128))))
+ self:addchild(b_missile(vec(rndr(0,128), 0)))
 end
 
 local pat_comptest = t_pattern_compound:extend{
@@ -1223,6 +1228,22 @@ local lib_patterns = {
 }
 
 -- Stage
+
+local t_arena_frame = entity:extend{
+ z = 5
+}
+function t_arena_frame:init(parent)
+ self.parent = parent
+ entity.init(self)
+end
+function t_arena_frame:draw() 
+ local box = self.parent.hbox:grow(vec_noneone):outline(3)
+ rectfill(0, 0, 128, box.y0, 00)
+ rectfill(0, 0, box.x0, 128, 00)
+ rectfill(0, box.y1, 128, 128, 00)
+ rectfill(box.x1, 0, 128, 128, 00)
+ -- entity.draw(self)
+end
 
 local t_arena = mob:extend{
  cur_pattern = nil,
@@ -1246,6 +1267,7 @@ function t_arena:update()
 end
 function t_arena:onadd()
  self.stage.arena = self
+ -- self.stage:add(t_arena_frame(self))
 end
 function t_arena:coupdate()
  while true do
@@ -1276,7 +1298,9 @@ function t_arena:new_wave()
 end
 function t_arena:draw()
  -- TODO black frame for layered effects (stage is a hole)
- local drawbox = self.hbox:grow(vec_noneone)
+
+ local drawbox = self.hbox:grow(vec_noneone):outline(1)
+ rectfill(mrconcat({drawbox:unpack()}, 0))
  rect(mrconcat({drawbox:unpack()}, 3))
  rect(mrconcat({drawbox:outline(1):unpack()}, 11))
  mob.draw(self)
@@ -1327,7 +1351,9 @@ function t_inspectmenu:drawui()
  rect(mrconcatu(bbox.fromxywh(16,96-8,96,32), 7))
 end
 
-st_game_inspect = st_game:extend{}
+st_game_inspect = st_game:extend{
+ addscore = nop
+}
 function st_game_inspect:init(pattern)
  stage.init(self)
 
