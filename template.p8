@@ -37,8 +37,8 @@ end
 -- print all arguments
 function printa(...)
  s = ""
- foreach({...}, function(a) s ..= ','..tostring(a) end)
- printh(s)
+ foreach({...}, function(a) s ..= tostring(a)..',' end)
+ printh(sub(s, 0, #s-1))
 end
 
 -- multiple return concatenation

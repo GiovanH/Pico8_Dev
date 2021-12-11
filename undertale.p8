@@ -15,6 +15,8 @@ __lua__
 local debug = true  -- (stat(6) == 'debug')
 local cur_stage = nil
 
+local high_score = 10
+
 -->8
 -- utility
 
@@ -184,8 +186,8 @@ end
 -- print all arguments
 function printa(...)
  s = ""
- foreach({...}, function(a) s ..= ','..tostring(a) end)
- printh(s)
+ foreach({...}, function(a) s ..= tostring(a)..',' end)
+ printh(sub(s, 0, #s-1))
 end
 
 -- multiple return concatenation
@@ -864,7 +866,7 @@ function t_soul:ongraze(bullet)
  if (self.sp >= 20) then
   self.sp = 0
   self.hp = min(20, self.hp + 1)
-  self.stage:addscore(2)
+  self.stage:addscore(2, 11)
  end
  return true
 end
@@ -878,17 +880,22 @@ function t_soul:draw()
 end
 function t_soul:drawui()
  if (self.isdemo) return
- function drawbar(amt, max, col, origin)
-  local perc = amt / max
-  local hpbox = bbox(origin, vec(60, 8))
-  local hplostv = vec(hpbox.w * (perc - 1), 0)
+ local amt, max, col, origin = self.hp, 20, 8, vec(8, 118)
+ local perc = amt / max
+ local hpbox = bbox(origin, vec(60, 8))
+ local hplostv = vec(hpbox.w * (perc - 1), 0)
+ rectfill(mrconcatu(hpbox:grow(hplostv), col))
+ rect(mrconcatu(hpbox, 10))
+ print(amt .. "/" .. max, mrconcatu(origin+vec(2,2), 9))
 
-  rectfill(mrconcatu(hpbox:grow(hplostv), col))
-  rect(mrconcatu(hpbox, 10))
-  print(amt .. "/" .. max, mrconcatu(origin+vec(2,2), 9))
- end
- drawbar(self.hp, 20, 8, vec(2, 118))
- drawbar(self.sp, 20, 3, vec(2, 110))
+ local amt, max, col, origin = self.sp, 20, 3, vec(8, 96)
+ local perc = amt / max
+ local hpbox = bbox(origin, vec(8, -60))
+ local hplostv = vec(0, hpbox.h * (perc - 1))
+ printa(perc, hpbox, hplost)
+ rectfill(mrconcatu(hpbox:grow(hplostv), col))
+ rect(mrconcatu(hpbox, 10))
+-- print(amt .. "/" .. max, mrconcatu(origin+vec(2,2), 9))
 
 end
 
@@ -923,7 +930,7 @@ function t_warnbox:draw()
  color(8)
  rect(self.hbox:grow(vec_noneone):unpack())
  print("!", self.hbox:center():__sub(1, 3):unpack())
- -- mob.draw(self)
+-- mob.draw(self)
 end
 
 -- Bullets
@@ -1038,10 +1045,9 @@ function b_thrown:coupdate()
  self.vel = self.stage.o_soul.pos:__sub(self.pos):norm()
 end
 
-
 local b_missile = t_bullet:extend{
  ttl = 600,
- dmg = 1,
+ dmg = 4,
  anim = nil,
  size = vec(4),
  bsize = vec(4),
@@ -1050,11 +1056,12 @@ local b_missile = t_bullet:extend{
 function b_missile:update()
  local v_towards = self.stage.o_soul.pos:__sub(self.pos):norm()
  -- self.acc = self.acc:norm()*0.4+ v_towards*0.05
- self.vel = self.vel:norm()*0.35 + v_towards*0.05
+ self.vel = self.vel*0.88 + v_towards*0.05
  t_bullet.update(self)
  self.v_towards = v_towards
 end
 function b_missile:draw()
+ pal(self.paltab)
  local path = {
   vec(2, 0),
   vec(-6, 3),
@@ -1062,7 +1069,7 @@ function b_missile:draw()
   vec(2, 0)
  }
  draw_beam(path, self.pos, atan2(self.v_towards:unpack()), 7)
-t_bullet.draw(self)
+ t_bullet.draw(self)
 end
 
 -- Patterns
@@ -1081,11 +1088,16 @@ function t_pattern:drawui()
  line(0, 0, 128*(self.ttl / self.lifespan), 0, 10)
 end
 function t_pattern:addchild(newbullet)
- add(self.children, self.stage:add(newbullet))
+ if (self.stage) add(self.children, self.stage:add(newbullet))
 end
 function t_pattern:destroy()
  foreach(self.children, function(c) c:destroy() end)
  entity.destroy(self)
+end
+function t_pattern:toblurb()
+ return self.name
+ .. '\ndmg: ' .. tostring(self.dmg)
+ .. '\nlen: ' .. tostring(self.lifespan / 60) .. ' secs'
 end
 
 local pat_rest = t_pattern:extend{
@@ -1095,10 +1107,17 @@ local pat_rest = t_pattern:extend{
 
 local t_pattern_compound = t_pattern:extend{
  name = "base compound pattern",
- subpatterns = nil
+ subpatterns = nil,
+ dmg = "calc!",
+ lifespan = "calc!"
 }
 function t_pattern_compound:onadd()
  self.children = {}
+
+ local d = ''
+ foreach(self.subpatterns, function(a) d ..= tostring(a.dmg) .. ',' end)
+ self.dmg = sub(d, 0, #d-1)
+
  for p in all(self.subpatterns) do
   local c = self.stage:add(p(self.arena))
   add(self.children, c)
@@ -1114,6 +1133,7 @@ end
 
 local pat_rain = t_pattern:extend{
  name = "rain",
+ dmg = b_fall.dmg .. '/ea',
  lifespan = 8 * 60
 }
 function pat_rain:coupdate()
@@ -1130,6 +1150,7 @@ end
 
 local pat_circthrow = t_pattern:extend{
  name = "circle thrower",
+ dmg = b_thrown.dmg .. '/ea',
  lifespan = 6 * 60
 }
 function pat_circthrow:coupdate()
@@ -1147,6 +1168,7 @@ end
 
 local pat_randthrow = t_pattern:extend{
  name = "thrower",
+ dmg = b_thrown.dmg .. '/ea',
  lifespan = 5 * 60
 }
 function pat_randthrow:coupdate()
@@ -1166,16 +1188,9 @@ end
 local pat_miner = t_pattern:extend{
  name = "miner",
  lifespan = 6 * 60,
+ dmg = b_mine.dmg .. '/ea',
  density = 4
 }
-function pat_miner.wdensity(d)
- function c()
-  local m = pat_miner()
-  m.density = d
-  return m
- end
- return c
-end
 function pat_miner:coupdate()
  local arena = self.stage.arena
  local o_soul = self.stage.o_soul
@@ -1203,10 +1218,12 @@ function pat_miner:coupdate()
 
  end
 end
-
-
+local pat_miner_d3 = pat_miner:extend{
+ density = 3
+}
 local pat_missile = t_pattern:extend{
  name = "missile",
+ dmg = b_missile.dmg,
  lifespan = 8 * 60
 }
 function pat_missile:coupdate()
@@ -1215,7 +1232,7 @@ end
 
 local pat_comptest = t_pattern_compound:extend{
  name = "compound pattern",
- subpatterns = {pat_miner.wdensity(3), pat_missile}
+ subpatterns = {pat_miner_d3, pat_missile}
 }
 
 local lib_patterns = {
@@ -1236,13 +1253,13 @@ function t_arena_frame:init(parent)
  self.parent = parent
  entity.init(self)
 end
-function t_arena_frame:draw() 
+function t_arena_frame:draw()
  local box = self.parent.hbox:grow(vec_noneone):outline(3)
  rectfill(0, 0, 128, box.y0, 00)
  rectfill(0, 0, box.x0, 128, 00)
  rectfill(0, box.y1, 128, 128, 00)
  rectfill(box.x1, 0, 128, 128, 00)
- -- entity.draw(self)
+-- entity.draw(self)
 end
 
 local t_arena = mob:extend{
@@ -1267,14 +1284,16 @@ function t_arena:update()
 end
 function t_arena:onadd()
  self.stage.arena = self
- -- self.stage:add(t_arena_frame(self))
+-- self.stage:add(t_arena_frame(self))
 end
 function t_arena:coupdate()
  while true do
   -- Rest
-  printh("resting")
-  self.cur_pattern = self.stage:add(pat_rest(self))
-  while (self.cur_pattern) do yield() end
+  if not self.onlypattern then
+   printh("resting")
+   self.cur_pattern = self.stage:add(pat_rest(self))
+   while (self.cur_pattern) do yield() end
+  end
 
   -- New wave
   self:new_wave()
@@ -1282,7 +1301,7 @@ function t_arena:coupdate()
   while (self.cur_pattern) do yield() end
   printa("waveperfect", self.waveperfect)
   if self.waveperfect then
-   self.stage:addscore(5)
+   self.stage:addscore(3, 10)
   else
    self.stage:addscore(1)
   end
@@ -1315,16 +1334,20 @@ end
 
 local t_scoreclock = entity:extend{}
 function t_scoreclock:drawui()
- prints(self.stage.score..'00', 128, 0, 7, 0, true)
+ local highcol = 7
+ if (high_score == self.stage.score) highcol = 10
+ prints("score ".. self.stage.score..'00', 128, 116, 7, 0, true)
+ prints("high ".. high_score..'00', 128, 122, highcol, 0, true)
 end
 
 local t_scorefx = particle:extend{}
-function t_scorefx:init(pos, vel, score)
+function t_scorefx:init(pos, vel, score, color)
  self.score = score
- particle.init(self, pos, vel, vec_zero, 80, 0)
+ self.color = color
+ particle.init(self, pos, vel, vec_zero, 30, 0)
 end
 function t_scorefx:draw()
- prints(self.score..'00', mrconcatu(self.pos, 7, 0, true)) 
+ prints(self.score..'00', mrconcatu(self.pos, self.color, 0, true))
 end
 
 st_game = stage:extend{}
@@ -1338,17 +1361,48 @@ function st_game:init()
 
  self.score = 0
 end
-function st_game:addscore(points)
+function st_game:addscore(points, color)
+ color = color or 7
  self.score += points
- self:add(t_scorefx(vec(128, 0), vec(0, 1), points))
+ high_score = max(high_score, self.score)
+ self:add(t_scorefx(vec(128, 116), vec(0, -1), points, color))
 end
 
-local t_inspectmenu = entity:extend{}
-function t_inspectmenu:init()
- entity.init(self)
-end
+local t_inspectmenu = entity:extend{
+ sel_index = 1,
+ menubox = bbox.fromxywh(16,88,96,32),
+ sel_origin = vec(92, 12)
+}
 function t_inspectmenu:drawui()
- rect(mrconcatu(bbox.fromxywh(16,96-8,96,32), 7))
+ rect(mrconcatu(self.menubox, 7))
+ for i,v in ipairs(lib_patterns) do
+  local c = 7
+  if i == self.sel_index then
+   c = 10
+   print("♥", mrconcatu(self.sel_origin + vec(-8, i*8), 8))
+  end
+  print(v.name, mrconcatu(self.sel_origin + vec(0, i*8), c))
+ end
+
+ local cur_pat = self.stage.o_arena.cur_pattern
+ if (cur_pat) print(cur_pat:toblurb(), mrconcatu(self.menubox.origin + vec(2), 7))
+
+end
+function t_inspectmenu:update()
+ entity.update(self)
+ local newindex = self.sel_index
+ if (btnp(4)) newindex += 1
+ if (newindex > #lib_patterns) newindex = 1
+ if (btnp(5)) newindex -= 1
+ if (newindex < 1 ) newindex = #lib_patterns
+
+ if newindex != self.sel_index then
+  printa(newindex, #lib_patterns)
+  local arena = self.stage.o_arena
+  arena.onlypattern = lib_patterns[newindex]
+  arena.cur_pattern:destroy()
+  self.sel_index = newindex
+ end
 end
 
 st_game_inspect = st_game:extend{
@@ -1465,3 +1519,17 @@ ccddeeff000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000100001d0501a0500c0500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 010800001162500600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010e00001c0300000017050180501a050000001805017050150500000015050180501c050000001a05018050170500000017050180501a050000001c050000001805000000150500000015050000000000000000
+010e00001a050000001a0501d05021050000001f0501d0501c0500000000000180501c050000001a05018050170500000017050180501a050000001c050000001805000000150500000015050000000000000000
+__music__
+01 0a424344
+02 0b424344
+
