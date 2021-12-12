@@ -942,19 +942,18 @@ local t_bullet = mob:extend{
  dmg = 1,
  hbox_offset = 'CENTER',
  anchor = 'CENTER',
- bsize = vec(5, 5),
- vel = vec(0, 0.3),
- acc = vec(0, 0),
+ vel = vec(0),
+ acc = vec(0),
  dmg_color = nil,
  destroy_on_dmg = true,
-
 }
 function t_bullet:init(pos)
  -- Center
- if (self.hbox_offset == 'CENTER') self.hbox_offset = self.bsize / -2
+ local csize = self.bsize or self.size
+ if (self.hbox_offset == 'CENTER') self.hbox_offset = csize / -2
  if (self.anchor == 'CENTER') self.anchor = self.size / -2
  mob.init(self, pos, self.spr, self.size)
- self.dmg_color = rndc{nil, "blue", "orange"}
+-- self.dmg_color = rndc{nil, "blue", "orange"}
 end
 function t_bullet:canhit(player)
  if (self.dmg_color == "blue" and not player.moved) return false
@@ -987,13 +986,27 @@ function t_bullet:drawdebug()
  end
 end
 
+local t_bullet_area = t_bullet:extend{}
+function t_bullet_area:init(pos, size, ttl)
+ self.size = size
+ self.ttl = ttl
+ t_bullet.init(self, pos)
+end
+function t_bullet_area:draw()
+ printa(self.lifespan, self.ttl)
+ pal(self.paltab)
+ paltt(self.tcol)
+ rectfill(mrconcatu(self.hbox:grow(vec_noneone), 7))
+ mob.drawdebug(self)
+end
+
 local b_fall = t_bullet:extend{
  z = 4,
  ttl = 300,
  anim = {016, 017, 018, 019},
  frame_len = 4,
  dmg = 1,
- bsize = vec(5, 5),
+ size = vec(5, 5),
  hbox_offset = vec(1, 0),
  anchor = vec(0),
  vel = vec(0, 0.3)
@@ -1019,11 +1032,30 @@ local b_mine = t_bullet:extend{
  anim = {001},
  dmg = 1,
  size = vec(4),
- bsize = vec(4),
  -- anchor = vec(-2),
  -- hbox_offset = vec(-2),
  vel = vec(0, 0)
 }
+
+local b_meteorexp = t_bullet:extend{
+ ttl = 100,
+ anim = {016, 017, 018, 019},
+ frame_len = 4,
+ dmg = 4,
+ size = vec(4),
+ -- anchor = vec(-2),
+ -- hbox_offset = vec(-2),
+ vel = vec(0, 0)
+}
+function b_meteorexp:init(pos, vel, ttl)
+ self.vel = vel
+ self.ttl = ttl
+ t_bullet.init(self, pos)
+end
+function b_meteorexp:update()
+ self.vel *= 0.95
+ t_bullet.update(self)
+end
 
 local b_thrown = t_bullet:extend{
  ttl = 300,
@@ -1031,9 +1063,7 @@ local b_thrown = t_bullet:extend{
  frame_len = 4,
  dmg = 1,
  size = vec(6),
- bsize = vec(4),
- -- hbox_offset = vec(1, 1),
- vel = vec(0, 0)
+ bsize = vec(4)
 }
 function b_thrown:init(pos, delay)
  t_bullet.init(self, pos)
@@ -1050,7 +1080,6 @@ local b_missile = t_bullet:extend{
  dmg = 4,
  anim = nil,
  size = vec(4),
- bsize = vec(4),
  destroy_on_dmg = false
 }
 function b_missile:update()
@@ -1230,12 +1259,68 @@ function pat_missile:coupdate()
  self:addchild(b_missile(vec(rndr(0,128), 0)))
 end
 
+local pat_meteor = t_pattern:extend{
+ name = "meteor",
+ lifespan = 8 * 60,
+ dmg = b_meteorexp.dmg .. '/ea',
+ density = 3,
+ simul = 3,
+ warntime = 45,
+ pause_between = 60
+}
+function pat_meteor:coupdate()
+ local arena = self.stage.arena
+ local o_soul = self.stage.o_soul
+ local bttl = self.pause_between*(self.simul - 0.5)
+ local vecs = {}
+ for x = 0, self.density-1 do
+  for y = 0, self.density-1 do
+   add(vecs, (vec(0.5)+vec(x, y))/self.density)
+  end
+ end
+ while true do
+  local v = rndc(vecs)
+  -- remove in-use space from pool
+  del(vecs, v)
+
+  local hitbox = bbox(
+   arena.hbox.origin + v:dotp(arena.hbox.size),
+   vec(0,0)
+  ):outline(14)
+
+  self:addchild(t_warnbox(hitbox.origin, false, hitbox.size, {ttl=self.warntime}))
+  -- self.stage:schedule(self.warntime, closure(
+  --  self.addchild, self,
+  --  t_bullet_area(hitbox:center(), hitbox.size, bttl)
+  -- ))
+
+  self.stage:schedule(self.warntime, function()
+    local n = 12
+    for i = 1, n do
+     self:addchild(b_meteorexp(
+       hitbox:center(),
+       vec(cos(i/n), sin(i/n))*0.95,
+       bttl))
+    end
+   end)
+
+  -- Space freed, return to pool
+  self.stage:schedule(self.warntime + self.pause_between*self.simul, closure(
+    add, vecs, v
+   ))
+  -- end
+  yieldn(self.pause_between)
+
+ end
+end
+
 local pat_comptest = t_pattern_compound:extend{
  name = "compound pattern",
  subpatterns = {pat_miner_d3, pat_missile}
 }
 
 local lib_patterns = {
+ pat_meteor,
  pat_missile,
  pat_comptest,
  pat_miner,
