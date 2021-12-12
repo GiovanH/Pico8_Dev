@@ -993,12 +993,34 @@ function t_bullet_area:init(pos, size, ttl)
  t_bullet.init(self, pos)
 end
 function t_bullet_area:draw()
- printa(self.lifespan, self.ttl)
  pal(self.paltab)
  paltt(self.tcol)
  rectfill(mrconcatu(self.hbox:grow(vec_noneone), 7))
  mob.drawdebug(self)
 end
+
+local b_area_sinbar = t_bullet_area:extend{
+ vel = vec(0, .6),
+ dmg = 2,
+ ttl = 400,
+ dynamic = true,
+ xfunc = sin,
+ gap = 24
+}
+function b_area_sinbar:init(pos, size)
+ self.size = size
+ self.hbox_offset = vec(0)
+ self.anchor = vec(0)
+ t_bullet.init(self, pos)
+end
+function b_area_sinbar:coupdate()
+ while true do
+  self.hbox_offset.x = self.xfunc(self.pos.y/128)*self.gap
+  yield()
+ end
+end
+
+local b_area_cosbar = b_area_sinbar:extend{xfunc = cos}
 
 local b_fall = t_bullet:extend{
  z = 4,
@@ -1042,7 +1064,8 @@ local b_meteorexp = t_bullet:extend{
  anim = {016, 017, 018, 019},
  frame_len = 4,
  dmg = 4,
- size = vec(4),
+ size = vec(6),
+ bsize = vec(4),
  -- anchor = vec(-2),
  -- hbox_offset = vec(-2),
  vel = vec(0, 0)
@@ -1177,6 +1200,31 @@ function pat_rain:coupdate()
  end
 end
 
+local pat_sinbar = t_pattern:extend{
+ name = "sinbar",
+ dmg = b_area_sinbar.dmg .. '/ea',
+ lifespan = 500
+}
+function pat_sinbar:coupdate()
+ local arena = self.stage.arena
+ local gap = 24
+ -- our turn
+ while true do
+  local width = rndr(arena.hbox.x0+gap, arena.hbox.x1-gap)
+  local bar = rndc{b_area_sinbar, b_area_cosbar}
+  self:addchild(bar(
+   vec(-64, -4),
+   vec(width+64, 4)
+   ))
+  self:addchild(bar(
+   vec(width+gap, -4),
+   vec(128-width, 4)
+   ))
+  yieldn(80)
+ end
+end
+
+
 local pat_circthrow = t_pattern:extend{
  name = "circle thrower",
  dmg = b_thrown.dmg .. '/ea',
@@ -1286,7 +1334,7 @@ function pat_meteor:coupdate()
   local hitbox = bbox(
    arena.hbox.origin + v:dotp(arena.hbox.size),
    vec(0,0)
-  ):outline(14)
+  ):outline(10)
 
   self:addchild(t_warnbox(hitbox.origin, false, hitbox.size, {ttl=self.warntime}))
   -- self.stage:schedule(self.warntime, closure(
@@ -1314,15 +1362,16 @@ function pat_meteor:coupdate()
  end
 end
 
-local pat_comptest = t_pattern_compound:extend{
- name = "compound pattern",
+local pat_comp_missile = t_pattern_compound:extend{
+ name = "missile (compound)",
  subpatterns = {pat_miner_d3, pat_missile}
 }
 
 local lib_patterns = {
+ pat_sinbar,
  pat_meteor,
  pat_missile,
- pat_comptest,
+ pat_comp_missile,
  pat_miner,
  pat_rain,
  pat_circthrow,
