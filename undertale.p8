@@ -223,16 +223,18 @@ function vec:norm()
  local ratio2 = ratio1 * (1.29289 - (ax + ay) * ratio1 * 0.29289)
  return self:dotp(ratio2, ratio2)
 end
+function vec:rotate(theta)
+ return vec(
+  cos(theta)*self.x-sin(theta)*self.y,
+  sin(theta)*self.x+cos(theta)*self.y
+ )
+end
 
 -- Draw the vector connecting the points in path
 function draw_beam(path, origin, theta, color)
  local prev = nil
  for i, v in ipairs(path) do
-  local x, y = v:unpack()
-  local thisv = origin + vec(
-   cos(theta)*x-sin(theta)*y,
-   sin(theta)*x+cos(theta)*y
-  )
+  local thisv = origin + v:rotate(theta)
   if prev then
    line(mrconcatu(thisv, mrconcatu(prev, color)))
   end
@@ -911,35 +913,16 @@ local b_fall = t_bullet:extend{
  anim = {016, 017, 018, 019},
  frame_len = 4,
  dmg = 1,
- size = vec(5, 5),
- hbox_offset = vec(1, 0),
- anchor = vec(0),
+ size = vec(6),
+ bsize = vec(4),
  vel = vec(0, 0.3)
 }
-function b_fall:update()
- t_bullet.update(self)
-
- if self._findex == 1 then
-  self.hbox_offset = vec(1, 0)
-  self.bsize = vec(4, 6)
- elseif self._findex == 3 then
-  self.hbox_offset = vec(0, 1)
-  self.bsize = vec(6, 4)
- end
-
- if not self.hbox:overlaps(box_screen) then
-  self:destroy()
- end
-end
 
 local b_mine = t_bullet:extend{
  ttl = 800,
  anim = {001},
  dmg = 1,
- size = vec(4),
- -- anchor = vec(-2),
- -- hbox_offset = vec(-2),
- vel = vec(0, 0)
+ size = vec(4)
 }
 
 local b_meteorexp = t_bullet:extend{
@@ -969,7 +952,8 @@ local b_thrown = t_bullet:extend{
  frame_len = 4,
  dmg = 1,
  size = vec(6),
- bsize = vec(4)
+ bsize = vec(4),
+ angle_offset = nil
 }
 function b_thrown:init(pos, delay)
  t_bullet.init(self, pos)
@@ -979,6 +963,9 @@ function b_thrown:coupdate()
  local arena = self.stage.arena
  yieldn(self.delay)
  self.vel = self.stage.o_soul.pos:__sub(self.pos):norm()
+ if self.angle_offset then
+  self.vel = self.vel:rotate(self.angle_offset)
+ end
 end
 
 local b_missile = t_bullet:extend{
@@ -1037,7 +1024,7 @@ end
 
 local pat_rest = t_pattern:extend{
  name = "rest pattern",
- lifespan = 60
+ lifespan = 15
 }
 
 local t_pattern_compound = t_pattern:extend{
@@ -1205,6 +1192,27 @@ function pat_randthrow:coupdate()
  end
 end
 
+local pat_spreadthrow = t_pattern:extend{
+ name = "spreadthrow",
+ dmg = b_thrown.dmg .. '/ea',
+ lifespan = 5 * 60
+}
+function pat_spreadthrow:coupdate()
+ local arena = self.stage.arena
+ while true do
+  local pos = vec(
+   rndr(arena.hbox.x0, arena.hbox.x1-4),
+   arena.hbox.y0-8
+  )
+  for angle_offset in all{-0.05, 0, 0.05} do
+   local b = b_thrown(pos, 30)
+   b.angle_offset = angle_offset
+   self:addchild(b)
+  end
+  yieldn(50)
+ end
+end
+
 local pat_miner = t_pattern:extend{
  name = "miner",
  lifespan = 6 * 60,
@@ -1313,16 +1321,24 @@ local pat_comp_rain = t_pattern_compound:extend{
  subpatterns = {pat_miner, pat_rain_red}
 }
 
+local pat_comp_spread = t_pattern_compound:extend{
+ name = "spread (compound)",
+ subpatterns = {pat_spreadthrow, pat_redbar}
+}
+
 -- local pat_comp_bars = t_pattern_compound:extend{
 --  name = "bars (compound)",
 --  subpatterns = {pat_bluebar, pat_gapbar}
 -- }
 
 local lib_patterns = {
+ pat_missile,
+ -- pat_comp_spread,
+ pat_spreadthrow,
  pat_gapbar,
  -- pat_comp_bars,
- -- pat_bluebar,
- pat_redbar,
+ -- pat_bluesbar,
+ -- pat_redbar,
  pat_comp_rain,
  pat_sinbar,
  pat_meteor,
@@ -1354,7 +1370,8 @@ end
 local t_arena = mob:extend{
  cur_pattern = nil,
  z = -1,
- onlypattern = nil
+ onlypattern = nil,
+ patternbag = {}
 }
 function t_arena:update()
  -- move arena with p2
@@ -1401,7 +1418,11 @@ function t_arena:new_wave()
  -- Add new pattern to stage
  -- Set cur_pattern to new pattern
  -- Wait for cur_pattern to die
- local pat = self.onlypattern or rndc(lib_patterns)
+ if #self.patternbag < 1 then
+  self.patternbag = {unpack(lib_patterns), unpack(lib_patterns)}
+  shuffle_table(self.patternbag)
+ end
+ local pat = self.onlypattern or rndc(self.patternbag)
  self.cur_pattern = self.stage:add(pat(self))
 end
 function t_arena:draw()
