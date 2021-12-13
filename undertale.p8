@@ -846,7 +846,7 @@ function t_bullet:drawdebug()
   line(spx, spy,
    mrconcatu(self.pos+self.vel*20, 4))
   line(spx, spy,
-   mrconcatu(self.pos+self.acc*10, 8))
+   mrconcatu(self.pos+self.acc*100, 8))
  end
 end
 
@@ -973,14 +973,16 @@ local b_missile = t_bullet:extend{
  dmg = 4,
  anim = nil,
  size = vec(4),
- destroy_on_dmg = false
+ destroy_on_dmg = false,
+ max_vel = 1.5
 }
 function b_missile:update()
  local v_towards = self.stage.o_soul.pos:__sub(self.pos):norm()
- -- self.acc = self.acc:norm()*0.4+ v_towards*0.05
- self.vel = self.vel*0.88 + v_towards*0.05
+ self.acc = v_towards*0.02 + self.vel*-0.01
  t_bullet.update(self)
- self.v_towards = v_towards
+ if self.vel:mag() > self.max_vel then
+  self.vel = self.vel:norm()*self.max_vel
+ end
 end
 function b_missile:draw()
  pal(self.paltab)
@@ -990,7 +992,7 @@ function b_missile:draw()
   vec(-6, -3),
   vec(2, 0)
  }
- draw_beam(path, self.pos, atan2(self.v_towards:unpack()), 7)
+ draw_beam(path, self.pos, atan2(self.vel:unpack()), 7)
  t_bullet.draw(self)
 end
 
