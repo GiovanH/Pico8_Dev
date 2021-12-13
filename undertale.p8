@@ -22,144 +22,6 @@ local high_score = 10
 
 if (debug) menuitem(5,'toggle debug',function() debug = not debug end)
 
-dbg=(function()
-  poke(0x5f2d, 1)
-  local vars,sy={},0
-  local mx,my,mb,pb,click,mw,exp,x,y
-  function butn(exp,x,y)
-   local hover=mx>=x and mx<x+4 and my>=y and my<y+6
-   print(exp and "-" or "+",x,y,hover and 7 or 5)
-   return hover and click
-  end
-  function inspect(v,d)
-   d=d or 0
-   local t=type(v)
-   if t=="table" then
-    if(d>5)return "[table]"
-    local props={}
-    for key,val in pairs(v) do
-     props[key]=inspect(val,d+1)
-    end
-    return {
-     expand=false,
-     props=props
-    }
-   elseif t=="string" then
-    return chr(34)..v..chr(34)
-   elseif t=="boolean" then
-    return v and "true" or "false"
-   elseif t=="nil" or t=="function" or t=="thread" then
-    return "["..t.."]"
-   else
-    return ""..v
-   end
-  end
-  function drawvar(var,name)
-   if type(var)=="string" then
-    print(name..":",x+4,y,6)
-    print(var,x+#(""..name)*4+8,y,7)
-    y+=6
-   else
-    -- expand button
-    if(butn(var.expand,x,y))var.expand=not var.expand
-    -- name
-    print(name,x+4,y,12) y+=6
-    -- content
-    if var.expand then
-     x+=2
-     for key,val in pairs(var.props) do
-      drawvar(val,key)
-     end
-     x-=2
-    end
-   end
-  end
-  function copyuistate(src,dst)
-   if type(src)=="table" and type(dst)=="table" then
-    dst.expand=src.expand
-    for key,val in pairs(src.props) do
-     copyuistate(val,dst.props[key])
-    end
-   end
-  end
-  function watch(var,name)
-   name=name or "[var]"
-   local p,i=vars[name],inspect(var)
-   if(p)copyuistate(p,i)
-   vars[name]=i
-  end
-  function clear()
-   vars={}
-  end
-  function draw(dx,dy,w,h)
-   dx=dx or 0
-   dy=dy or 48
-   w=w or 128-dx
-   h=h or 128-dy
-   -- collapsed mode
-   if not exp then
-    dx+=w-10
-    w,h=10,5
-   end
-   -- window
-   clip(dx,dy,w,h)
-   rectfill(0,0,128,128,1)
-   x=dx+2 y=dy+2-sy
-
-   -- read mouse
-   mx,my,mw=stat(32),stat(33),stat(36)
-   mb=band(stat(34),1)~=0
-   click=mb and not pb and mx>=dx and mx<dx+w and my>=dy and my<dy+h
-   pb=mb
-
-   if exp then
-
-    -- variables
-    for k,v in pairs(vars) do
-     drawvar(v,k)
-    end
-
-    -- scrolling
-    local sh=y+sy-dy
-    sy=max(min(sy-mw*8,sh-h),0)
-   end
-
-   -- expand/collapse btn
-   if(butn(exp,dx+w-10,dy))exp=not exp
-
-   -- draw mouse ptr
-   clip()
-   line(mx,my,mx,my+2,8)
-   color(7)
-  end
-
-  function show()
-   exp=true
-   while exp do
-    draw()
-    flip()
-   end
-  end
-
-  function prnt(v,name)
-   watch(v,name)
-   show()
-  end
-
-  return{
-   watch=watch,
-   clear=clear,
-   expand=function(val)
-    if(val~=nil)exp=val
-    return exp
-   end,
-   draw=draw,
-   show=show,
-   print=prnt
-  }
- end)
-dbg = dbg()
-
 -- any to string (dumptable)
 function tostring(any, depth)
  if (type(any)~="table" or depth==0) return tostr(any)
@@ -999,19 +861,25 @@ function t_bullet_area:draw()
  mob.drawdebug(self)
 end
 
-local b_area_sinbar = t_bullet_area:extend{
- vel = vec(0, .6),
- dmg = 2,
+local b_area_gapbar = t_bullet_area:extend{
  ttl = 400,
+ z = 4,
+ dmg = 2,
+ vel = vec(0, 0.4),
+ hbox_offset = vec(0),
+ anchor = vec(0),
  dynamic = true,
+}
+
+local b_area_sinbar = b_area_gapbar:extend{
  xfunc = sin,
- gap = 24
+ gap = 20,
 }
 function b_area_sinbar:init(pos, size)
  self.size = size
  self.hbox_offset = vec(0)
  self.anchor = vec(0)
- t_bullet.init(self, pos)
+ t_bullet.init(self, pos)  -- ?
 end
 function b_area_sinbar:coupdate()
  while true do
@@ -1019,8 +887,23 @@ function b_area_sinbar:coupdate()
   yield()
  end
 end
-
 local b_area_cosbar = b_area_sinbar:extend{xfunc = cos}
+
+local b_redbar_tb = b_area_gapbar:extend{
+ z = 5,
+ vel = vec(0, 0.5),
+ dmg = 2,
+ dmg_color = "orange",
+ destroy_on_dmg = false
+}
+
+local b_bluebar_lr = b_area_gapbar:extend{
+ z = 5,
+ vel = vec(-0.4, 0),
+ dmg = 2,
+ dmg_color = "blue",
+ destroy_on_dmg = false
+}
 
 local b_fall = t_bullet:extend{
  z = 4,
@@ -1166,10 +1049,12 @@ local t_pattern_compound = t_pattern:extend{
 function t_pattern_compound:onadd()
  self.children = {}
 
+ -- build dmg string
  local d = ''
  foreach(self.subpatterns, function(a) d ..= tostring(a.dmg) .. ',' end)
  self.dmg = sub(d, 0, #d-1)
 
+ -- normalize subpatterns' lifespans
  for p in all(self.subpatterns) do
   local c = self.stage:add(p(self.arena))
   add(self.children, c)
@@ -1183,22 +1068,29 @@ function t_pattern_compound:onadd()
  self.ttl = self.lifespan
 end
 
+-- real patterns
+
 local pat_rain = t_pattern:extend{
  name = "rain",
  dmg = b_fall.dmg .. '/ea',
- lifespan = 8 * 60
+ lifespan = 8 * 60,
+ b = b_fall
 }
 function pat_rain:coupdate()
  local arena = self.stage.arena
  -- our turn
  while true do
-  self:addchild(b_fall(vec(
+  self:addchild(self.b(vec(
      rndr(arena.hbox.x0, arena.hbox.x1-4),
      arena.hbox.y0-8
     )))
   yieldn(20)
  end
 end
+
+local pat_rain_red = pat_rain:extend{
+ b = b_fall:extend{dmg_color="orange"}
+}
 
 local pat_sinbar = t_pattern:extend{
  name = "sinbar",
@@ -1213,17 +1105,68 @@ function pat_sinbar:coupdate()
   local width = rndr(arena.hbox.x0+gap, arena.hbox.x1-gap)
   local bar = rndc{b_area_sinbar, b_area_cosbar}
   self:addchild(bar(
-   vec(-64, -4),
-   vec(width+64, 4)
+    vec(-64, -4),
+    vec(width+64, 4)
    ))
   self:addchild(bar(
-   vec(width+gap, -4),
-   vec(128-width, 4)
+    vec(width+gap, -4),
+    vec(128-width, 4)
    ))
   yieldn(80)
  end
 end
 
+local pat_gapbar = t_pattern:extend{
+ name = "gapbar",
+ dmg = b_area_gapbar.dmg .. '/ea',
+ lifespan = 500
+}
+function pat_gapbar:coupdate()
+ local arena = self.stage.arena
+ local gap = 20
+ -- our turn
+ while true do
+  local go = (gap/2)
+  local width = rndr(arena.hbox.x0+go, arena.hbox.x1-go)
+  self:addchild(b_area_gapbar(
+    vec(-64, -4),
+    vec(width+64, 4)
+   ))
+  self:addchild(b_area_gapbar(
+    vec(width+gap, -4),
+    vec(128-width, 4)
+   ))
+  yieldn(80)
+ end
+end
+
+local pat_redbar = t_pattern:extend{
+ name = "redbar",
+ dmg = '2/ea',
+ lifespan = 300
+}
+function pat_redbar:coupdate()
+ while true do
+  self:addchild(b_redbar_tb(
+    vec(self.stage.arena.hbox.x0, -3),
+    vec(self.stage.arena.hbox.w, 3), 800))
+  yieldn(80)
+ end
+end
+
+local pat_bluebar = t_pattern:extend{
+ name = "bluebar",
+ dmg = '2/ea',
+ lifespan = 300
+}
+function pat_bluebar:coupdate()
+ while true do
+  self:addchild(b_bluebar_lr(
+    vec(128, self.stage.arena.hbox.y0),
+    vec(3, self.stage.arena.hbox.h), 800))
+  yieldn(120)
+ end
+end
 
 local pat_circthrow = t_pattern:extend{
  name = "circle thrower",
@@ -1313,7 +1256,7 @@ local pat_meteor = t_pattern:extend{
  dmg = b_meteorexp.dmg .. '/ea',
  density = 3,
  simul = 3,
- warntime = 45,
+ warntime = 55,
  pause_between = 60
 }
 function pat_meteor:coupdate()
@@ -1356,9 +1299,7 @@ function pat_meteor:coupdate()
   self.stage:schedule(self.warntime + self.pause_between*self.simul, closure(
     add, vecs, v
    ))
-  -- end
   yieldn(self.pause_between)
-
  end
 end
 
@@ -1367,10 +1308,25 @@ local pat_comp_missile = t_pattern_compound:extend{
  subpatterns = {pat_miner_d3, pat_missile}
 }
 
+local pat_comp_rain = t_pattern_compound:extend{
+ name = "rain (compound)",
+ subpatterns = {pat_miner, pat_rain_red}
+}
+
+-- local pat_comp_bars = t_pattern_compound:extend{
+--  name = "bars (compound)",
+--  subpatterns = {pat_bluebar, pat_gapbar}
+-- }
+
 local lib_patterns = {
+ pat_gapbar,
+ -- pat_comp_bars,
+ -- pat_bluebar,
+ pat_redbar,
+ pat_comp_rain,
  pat_sinbar,
  pat_meteor,
- pat_missile,
+ -- pat_missile,
  pat_comp_missile,
  pat_miner,
  pat_rain,
@@ -1393,7 +1349,6 @@ function t_arena_frame:draw()
  rectfill(0, 0, box.x0, 128, 00)
  rectfill(0, box.y1, 128, 128, 00)
  rectfill(box.x1, 0, 128, 128, 00)
--- entity.draw(self)
 end
 
 local t_arena = mob:extend{
@@ -1418,7 +1373,7 @@ function t_arena:update()
 end
 function t_arena:onadd()
  self.stage.arena = self
--- self.stage:add(t_arena_frame(self))
+ self.stage:add(t_arena_frame(self))
 end
 function t_arena:coupdate()
  while true do
@@ -1542,16 +1497,18 @@ end
 st_game_inspect = st_game:extend{
  addscore = nop
 }
-function st_game_inspect:init(pattern)
+function st_game_inspect:init(pat_index)
  stage.init(self)
 
  self.o_arena = self:add(t_arena(vec(16), false, vec(64)))
  self.o_soul = self:add(t_soul(self.o_arena.hbox:center()))
  self.o_soul.isdemo = true
  self:add(t_graze(self.o_soul))
- self:add(t_inspectmenu())
+ printa(pat_index)
+ local o_inspectmenu = self:add(t_inspectmenu())
+ o_inspectmenu.sel_index = pat_index
 
- self.o_arena.onlypattern = pattern
+ self.o_arena.onlypattern = lib_patterns[pat_index]
 
  self.backheld = 0
 end
@@ -1600,7 +1557,7 @@ function st_mainmenu:libmenu()
  local choices = {}
  for i,v in ipairs(lib_patterns) do
   add(choices, {v.name, function()
-     cur_stage = st_game_inspect(v)
+     cur_stage = st_game_inspect(i)
     end})
  end
  self:add(choicer(choices, {pos=vec(18, 66)}))
@@ -1615,15 +1572,10 @@ end
 
 function _update60()
  cur_stage:update()
--- dbg.watch(cur_stage,"stage")
--- dbg.watch(focus, "focus")
--- dbg.watch(o_soul,"soul")
--- dbg.watch(o_tpattern,"pattern")
 end
 
 function _draw()
  cur_stage:draw()
- if (debug) dbg.draw()
 end
 __gfx__
 08808800077000000000000000000000001111000111100000700000077000000777000000700000000000000000000000000000000000000000000000000000
