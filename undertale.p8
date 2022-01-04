@@ -814,7 +814,7 @@ local t_bullet = mob:extend{
  z = 6,
  dynamic = true,
  ttl = 200,
- dmg = 1,
+ dmg = 0, -- set by init
  hbox_offset = 'CENTER',
  anchor = 'CENTER',
  vel = vec(0),
@@ -822,12 +822,13 @@ local t_bullet = mob:extend{
  dmg_color = nil,
  destroy_on_dmg = true,
 }
-function t_bullet:init(pos)
+function t_bullet:init(pos, dmg)
  -- Center
  local csize = self.bsize or self.size
  if (self.hbox_offset == 'CENTER') self.hbox_offset = csize / -2
  if (self.anchor == 'CENTER') self.anchor = self.size / -2
  mob.init(self, pos, self.spr, self.size)
+ self.dmg = dmg
 -- self.dmg_color = rndc{nil, "blue", "orange"}
 end
 function t_bullet:canhit(player)
@@ -862,10 +863,10 @@ function t_bullet:drawdebug()
 end
 
 local t_bullet_area = t_bullet:extend{}
-function t_bullet_area:init(pos, size, ttl)
+function t_bullet_area:init(pos, dmg, size, ttl)
  self.size = size
  self.ttl = ttl
- t_bullet.init(self, pos)
+ t_bullet.init(self, pos, dmg)
 end
 function t_bullet_area:draw()
  pal(self.paltab)
@@ -877,23 +878,22 @@ end
 local b_area_gapbar = t_bullet_area:extend{
  ttl = 400,
  z = 4,
- dmg = 2,
  vel = vec(0, 0.4),
  hbox_offset = vec(0),
  anchor = vec(0),
  dynamic = true,
 }
+function b_area_gapbar:init(pos, size, dmg)
+ self.size = size
+ self.hbox_offset = vec(0)
+ self.anchor = vec(0)
+ t_bullet.init(self, pos, dmg)  -- ?
+end
 
 local b_area_sinbar = b_area_gapbar:extend{
  xfunc = sin,
  gap = 20,
 }
-function b_area_sinbar:init(pos, size)
- self.size = size
- self.hbox_offset = vec(0)
- self.anchor = vec(0)
- t_bullet.init(self, pos)  -- ?
-end
 function b_area_sinbar:coupdate()
  while true do
   self.hbox_offset.x = self.xfunc(self.pos.y/128)*self.gap
@@ -905,7 +905,6 @@ local b_area_cosbar = b_area_sinbar:extend{xfunc = cos}
 local b_redbar_tb = b_area_gapbar:extend{
  z = 5,
  vel = vec(0, 0.5),
- dmg = 2,
  dmg_color = "orange",
  destroy_on_dmg = false
 }
@@ -913,7 +912,6 @@ local b_redbar_tb = b_area_gapbar:extend{
 local b_bluebar_lr = b_area_gapbar:extend{
  z = 5,
  vel = vec(-0.4, 0),
- dmg = 2,
  dmg_color = "blue",
  destroy_on_dmg = false
 }
@@ -923,7 +921,6 @@ local b_fall = t_bullet:extend{
  ttl = 300,
  anim = {016, 017, 018, 019},
  frame_len = 4,
- dmg = 1,
  size = vec(6),
  bsize = vec(4),
  vel = vec(0, 0.3)
@@ -932,7 +929,6 @@ local b_fall = t_bullet:extend{
 local b_mine = t_bullet:extend{
  ttl = 800,
  anim = {001},
- dmg = 1,
  size = vec(4)
 }
 
@@ -940,7 +936,6 @@ local b_meteorexp = t_bullet:extend{
  ttl = 100,
  anim = {016, 017, 018, 019},
  frame_len = 4,
- dmg = 4,
  size = vec(6),
  bsize = vec(4),
  -- anchor = vec(-2),
@@ -961,13 +956,12 @@ local b_thrown = t_bullet:extend{
  ttl = 300,
  anim = {016, 017, 018, 019},
  frame_len = 4,
- dmg = 1,
  size = vec(6),
  bsize = vec(4),
  angle_offset = nil
 }
-function b_thrown:init(pos, delay)
- t_bullet.init(self, pos)
+function b_thrown:init(pos, delay, dmg)
+ t_bullet.init(self, pos, dmg)
  self.delay = delay
 end
 function b_thrown:coupdate()
@@ -981,7 +975,6 @@ end
 
 local b_missile = t_bullet:extend{
  ttl = 600,
- dmg = 4,
  anim = nil,
  size = vec(4),
  destroy_on_dmg = false,
@@ -1011,7 +1004,8 @@ end
 
 local t_pattern = entity:extend{
  name = "??? pattern",
- lifespan = 200
+ lifespan = 200,
+ dmg = 0
 }
 function t_pattern:init(arena)
  entity.init(self)
@@ -1029,9 +1023,12 @@ function t_pattern:destroy()
  foreach(self.children, function(c) c:destroy() end)
  entity.destroy(self)
 end
+function t_pattern:dmgstr()
+ return self.dmg .. "/ea"
+end
 function t_pattern:toblurb()
  return self.name
- .. '\ndmg: ' .. tostring(self.dmg)
+ .. '\ndmg: ' .. tostring(self:dmgstr())
  .. '\nlen: ' .. tostring(self.lifespan / 60) .. ' secs'
 end
 
@@ -1051,7 +1048,7 @@ function t_pattern_compound:onadd()
 
  -- build dmg string
  local d = ''
- foreach(self.subpatterns, function(a) d ..= tostring(a.dmg) .. ',' end)
+ foreach(self.subpatterns, function(a) d ..= tostring(a:dmgstr()) .. ',' end)
  self.dmg = sub(d, 0, #d-1)
 
  -- normalize subpatterns' lifespans
@@ -1067,12 +1064,15 @@ function t_pattern_compound:onadd()
  end
  self.ttl = self.lifespan
 end
+function t_pattern_compound:dmgstr()
+ return self.dmg
+end
 
 -- real patterns
 
 local pat_rain = t_pattern:extend{
  name = "rain",
- dmg = b_fall.dmg .. '/ea',
+ dmg = 1,
  lifespan = 8 * 60,
  b = b_fall
 }
@@ -1080,10 +1080,13 @@ function pat_rain:coupdate()
  local arena = self.stage.arena
  -- our turn
  while true do
-  self:addchild(self.b(vec(
+  self:addchild(self.b(
+    vec(
      rndr(arena.hbox.x0, arena.hbox.x1-4),
      arena.hbox.y0-8
-    )))
+    ),
+    self.dmg
+   ))
   yieldn(20)
  end
 end
@@ -1093,8 +1096,8 @@ local pat_rain_red = pat_rain:extend{
 }
 
 local pat_sinbar = t_pattern:extend{
- name = "sinbar",
- dmg = b_area_sinbar.dmg .. '/ea',
+ name = "gapbar (sin)",
+ dmg = 2,
  lifespan = 500
 }
 function pat_sinbar:coupdate()
@@ -1106,11 +1109,13 @@ function pat_sinbar:coupdate()
   local bar = rndc{b_area_sinbar, b_area_cosbar}
   self:addchild(bar(
     vec(-64, -4),
-    vec(width+64, 4)
+    vec(width+64, 4),
+    self.dmg
    ))
   self:addchild(bar(
     vec(width+gap, -4),
-    vec(128-width, 4)
+    vec(128-width, 4),
+    self.dmg
    ))
   yieldn(80)
  end
@@ -1118,7 +1123,7 @@ end
 
 local pat_gapbar = t_pattern:extend{
  name = "gapbar",
- dmg = b_area_gapbar.dmg .. '/ea',
+ dmg = 2,
  lifespan = 500
 }
 function pat_gapbar:coupdate()
@@ -1130,11 +1135,13 @@ function pat_gapbar:coupdate()
   local width = rndr(arena.hbox.x0+go, arena.hbox.x1-go)
   self:addchild(b_area_gapbar(
     vec(-64, -4),
-    vec(width+64, 4)
+    vec(width+64, 4),
+    self.dmg
    ))
   self:addchild(b_area_gapbar(
     vec(width+gap, -4),
-    vec(128-width, 4)
+    vec(128-width, 4),
+    self.dmg
    ))
   yieldn(80)
  end
@@ -1142,35 +1149,37 @@ end
 
 local pat_redbar = t_pattern:extend{
  name = "redbar",
- dmg = '2/ea',
+ dmg = 2,
  lifespan = 300
 }
 function pat_redbar:coupdate()
  while true do
   self:addchild(b_redbar_tb(
     vec(self.stage.arena.hbox.x0, -3),
-    vec(self.stage.arena.hbox.w, 3), 800))
+    vec(self.stage.arena.hbox.w, 3), 800),
+   self.dmg)
   yieldn(80)
  end
 end
 
 local pat_bluebar = t_pattern:extend{
  name = "bluebar",
- dmg = '2/ea',
+ dmg = 2,
  lifespan = 300
 }
 function pat_bluebar:coupdate()
  while true do
   self:addchild(b_bluebar_lr(
     vec(128, self.stage.arena.hbox.y0),
-    vec(3, self.stage.arena.hbox.h), 800))
+    vec(3, self.stage.arena.hbox.h), 800),
+   self.dmg)
   yieldn(120)
  end
 end
 
 local pat_circthrow = t_pattern:extend{
  name = "circle thrower",
- dmg = b_thrown.dmg .. '/ea',
+ dmg = 1,
  lifespan = 6 * 60
 }
 function pat_circthrow:coupdate()
@@ -1181,14 +1190,15 @@ function pat_circthrow:coupdate()
   self:addchild(b_thrown(vec(
      r*cos(i/n),
      r*sin(i/n)
-    ) + arena.hbox:center(), 2*n))
+    ) + arena.hbox:center(), 2*n),
+   self.dmg)
   yieldn(2)
  end
 end
 
 local pat_randthrow = t_pattern:extend{
  name = "thrower",
- dmg = b_thrown.dmg .. '/ea',
+ dmg = 1,
  lifespan = 5 * 60
 }
 function pat_randthrow:coupdate()
@@ -1200,14 +1210,15 @@ function pat_randthrow:coupdate()
   self:addchild(b_thrown(vec(
      r*cos(theta),
      r*sin(theta)
-    ) + arena.hbox:center(), 8*n))
+    ) + arena.hbox:center(), 8*n),
+   self.dmg)
   yieldn(8)
  end
 end
 
 local pat_spreadthrow = t_pattern:extend{
  name = "spreadthrow",
- dmg = b_thrown.dmg .. '/ea',
+ dmg = 1,
  lifespan = 5 * 60
 }
 function pat_spreadthrow:coupdate()
@@ -1218,7 +1229,7 @@ function pat_spreadthrow:coupdate()
    arena.hbox.y0-8
   )
   for angle_offset in all{-0.05, 0, 0.05} do
-   local b = b_thrown(pos, 30)
+   local b = b_thrown(pos, 30, self.dmg)
    b.angle_offset = angle_offset
    self:addchild(b)
   end
@@ -1229,7 +1240,7 @@ end
 local pat_miner = t_pattern:extend{
  name = "miner",
  lifespan = 6 * 60,
- dmg = b_mine.dmg .. '/ea',
+ dmg = 1,
  density = 4
 }
 function pat_miner:coupdate()
@@ -1253,7 +1264,7 @@ function pat_miner:coupdate()
   local bigbox = warnbox:outline(2)
   -- if not o_soul.hbox:overlaps(bigbox) then
   self:addchild(t_warnbox(warnbox.origin, false, warnbox.size, {ttl=warntime}))
-  self.stage:schedule(warntime, closure(self.addchild, self, b_mine(bigbox:center())))
+  self.stage:schedule(warntime, closure(self.addchild, self, b_mine(bigbox:center(), self.dmg)))
   -- end
   yieldn(4)
 
@@ -1264,17 +1275,17 @@ local pat_miner_d3 = pat_miner:extend{
 }
 local pat_missile = t_pattern:extend{
  name = "missile",
- dmg = b_missile.dmg,
+ dmg = 4,
  lifespan = 8 * 60
 }
 function pat_missile:coupdate()
- self:addchild(b_missile(vec(rndr(0,128), 0)))
+ self:addchild(b_missile(vec(rndr(0,128), 0), self.dmg))
 end
 
 local pat_meteor = t_pattern:extend{
  name = "meteor",
  lifespan = 8 * 60,
- dmg = b_meteorexp.dmg .. '/ea',
+ dmg = 3,
  density = 3,
  simul = 3,
  warntime = 55,
@@ -1312,7 +1323,8 @@ function pat_meteor:coupdate()
      self:addchild(b_meteorexp(
        hitbox:center(),
        vec(cos(i/n), sin(i/n))*0.95,
-       bttl))
+       bttl),
+      self.dmg)
     end
    end)
 
@@ -1430,6 +1442,12 @@ function t_arena:coupdate()
  end
 end
 function t_arena:new_wave()
+ if self.onlypattern then
+  -- Skip bag logic/difficulty
+  self.cur_pattern = self.stage:add(self.onlypattern(self))
+  return
+ end
+
  -- Pick random pattern
  -- Add new pattern to stage
  -- Set cur_pattern to new pattern
@@ -1445,8 +1463,9 @@ function t_arena:new_wave()
   end
   shuffle_table(self.patternbag)
  end
- local pat = self.onlypattern or rndc(self.patternbag)
+ local pat = rndc(self.patternbag)
  self.cur_pattern = self.stage:add(pat(self))
+ return
 end
 function t_arena:draw()
  -- TODO black frame for layered effects (stage is a hole)
