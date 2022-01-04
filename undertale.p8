@@ -45,6 +45,17 @@ function itostr(v,n)
  return s
 end
 
+-- merge arrays
+function arrConcat(...)
+ local ret = {}
+ for i, list in ipairs{...} do
+  for _, v in ipairs(list) do
+   add(ret, v)
+  end
+ end
+ return ret
+end
+
 -- print all arguments
 function printa(...)
  s = ""
@@ -756,7 +767,7 @@ function t_soul:drawui()
  local perc = amt / max
  local hpbox = bbox(origin, vec(8, -60))
  local hplostv = vec(0, hpbox.h * (perc - 1))
- printa(perc, hpbox, hplost)
+ -- printa(perc, hpbox, hplost)
  rectfill(mrconcatu(hpbox:grow(hplostv), col))
  rect(mrconcatu(hpbox, 10))
 -- print(amt .. "/" .. max, mrconcatu(origin+vec(2,2), 9))
@@ -1333,24 +1344,25 @@ local pat_comp_spread = t_pattern_compound:extend{
 --  subpatterns = {pat_bluebar, pat_gapbar}
 -- }
 
-local lib_patterns = {
+local lib_patterns_easy = {
+ pat_miner,
  pat_missile,
- -- pat_comp_spread,
- pat_spreadthrow,
  pat_gapbar,
- -- pat_comp_bars,
- -- pat_bluesbar,
- -- pat_redbar,
+ pat_rain,
+}
+local lib_patterns_med = {
+ pat_spreadthrow,
+ pat_meteor,
+ pat_circthrow,
+ pat_randthrow,
+}
+local lib_patterns_hard = {
+ pat_comp_missile,
  pat_comp_rain,
  pat_sinbar,
- pat_meteor,
- -- pat_missile,
- pat_comp_missile,
- pat_miner,
- pat_rain,
- pat_circthrow,
- pat_randthrow
 }
+
+local lib_patterns = arrConcat(lib_patterns_easy, lib_patterns_med, lib_patterns_hard)
 
 -- Stage
 
@@ -1373,7 +1385,8 @@ local t_arena = mob:extend{
  cur_pattern = nil,
  z = -1,
  onlypattern = nil,
- patternbag = {}
+ patternbag = {},
+ difficulty_cutoff = 15
 }
 function t_arena:update()
  -- move arena with p2
@@ -1393,6 +1406,7 @@ end
 function t_arena:onadd()
  self.stage.arena = self
  self.stage:add(t_arena_frame(self))
+ self.wave_num = 0
 end
 function t_arena:coupdate()
  while true do
@@ -1420,8 +1434,15 @@ function t_arena:new_wave()
  -- Add new pattern to stage
  -- Set cur_pattern to new pattern
  -- Wait for cur_pattern to die
+ self.wave_num += 1
  if #self.patternbag < 1 then
-  self.patternbag = {unpack(lib_patterns), unpack(lib_patterns)}
+  if self.wave_num > self.difficulty_cutoff then
+   printh("New hard/med bag")
+   self.patternbag = arrConcat(lib_patterns_med, lib_patterns_hard)
+  else
+   printh("New easy/med bag")
+   self.patternbag = arrConcat(lib_patterns_easy, lib_patterns_med)
+  end
   shuffle_table(self.patternbag)
  end
  local pat = self.onlypattern or rndc(self.patternbag)
@@ -1439,7 +1460,7 @@ end
 function t_arena:drawui()
  local label = "undefined"
  if (self.cur_pattern) then
-  label = self.cur_pattern.name
+  label = self.wave_num .. ':' .. self.cur_pattern.name
  end
  print(label, 0, 1)
 end
