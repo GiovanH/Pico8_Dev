@@ -723,10 +723,11 @@ function t_soul:update()
  mob.update(self)
 end
 function t_soul:dmghit(dmg)
- if self.invuln > 0 then
+ if self.invuln > 0 or dmg < 1 then
   return false
  else
   if (not self.isdemo) self.hp -= dmg
+  printa(self.isdemo, dmg, self.hp)
   self.stage.arena.waveperfect = false
   -- TODO gameover logic
   self.invuln = 12
@@ -814,7 +815,7 @@ local t_bullet = mob:extend{
  z = 6,
  dynamic = true,
  ttl = 200,
- dmg = 0, -- set by init
+ dmg = 0,  -- set by init
  hbox_offset = 'CENTER',
  anchor = 'CENTER',
  vel = vec(0),
@@ -942,10 +943,10 @@ local b_meteorexp = t_bullet:extend{
  -- hbox_offset = vec(-2),
  vel = vec(0, 0)
 }
-function b_meteorexp:init(pos, vel, ttl)
+function b_meteorexp:init(pos, vel, ttl, dmg)
  self.vel = vel
  self.ttl = ttl
- t_bullet.init(self, pos)
+ t_bullet.init(self, pos, dmg)
 end
 function b_meteorexp:update()
  self.vel *= 0.95
@@ -982,7 +983,7 @@ local b_missile = t_bullet:extend{
 }
 function b_missile:update()
  local v_towards = self.stage.o_soul.pos:__sub(self.pos):norm()
- self.acc = v_towards*0.02 + self.vel*-0.01
+ self.acc = v_towards*0.03 + self.vel*-0.005
  t_bullet.update(self)
  if self.vel:mag() > self.max_vel then
   self.vel = self.vel:norm()*self.max_vel
@@ -1180,18 +1181,22 @@ end
 local pat_circthrow = t_pattern:extend{
  name = "circle thrower",
  dmg = 1,
- lifespan = 6 * 60
+ lifespan = 6 * 60,
+ numbullets = 30
 }
 function pat_circthrow:coupdate()
  local arena = self.stage.arena
- local n = 40
  local r = 50
+ local n = self.numbullets
  for i = 1, n do
   self:addchild(b_thrown(vec(
      r*cos(i/n),
      r*sin(i/n)
-    ) + arena.hbox:center(), 2*n),
-   self.dmg)
+    ) + arena.hbox:center(),
+    2*n+10,
+    self.dmg
+   )
+  )
   yieldn(2)
  end
 end
@@ -1210,8 +1215,9 @@ function pat_randthrow:coupdate()
   self:addchild(b_thrown(vec(
      r*cos(theta),
      r*sin(theta)
-    ) + arena.hbox:center(), 8*n),
-   self.dmg)
+    ) + arena.hbox:center(),
+    8*n,
+    self.dmg))
   yieldn(8)
  end
 end
@@ -1228,7 +1234,7 @@ function pat_spreadthrow:coupdate()
    rndr(arena.hbox.x0, arena.hbox.x1-4),
    arena.hbox.y0-8
   )
-  for angle_offset in all{-0.05, 0, 0.05} do
+  for angle_offset in all{-0.07, 0, 0.07} do
    local b = b_thrown(pos, 30, self.dmg)
    b.angle_offset = angle_offset
    self:addchild(b)
@@ -1323,8 +1329,9 @@ function pat_meteor:coupdate()
      self:addchild(b_meteorexp(
        hitbox:center(),
        vec(cos(i/n), sin(i/n))*0.95,
-       bttl),
-      self.dmg)
+       bttl,
+       self.dmg)
+     )
     end
    end)
 
@@ -1336,9 +1343,14 @@ function pat_meteor:coupdate()
  end
 end
 
+local pat_mined_missile = t_pattern_compound:extend{
+ name = "missile (mined)",
+ subpatterns = {pat_miner_d3, pat_missile}
+}
+
 local pat_comp_missile = t_pattern_compound:extend{
  name = "missile (compound)",
- subpatterns = {pat_miner_d3, pat_missile}
+ subpatterns = {pat_missile, pat_missile}
 }
 
 local pat_comp_rain = t_pattern_compound:extend{
@@ -1370,6 +1382,7 @@ local lib_patterns_med = {
 }
 local lib_patterns_hard = {
  pat_comp_missile,
+ pat_mined_missile,
  pat_comp_rain,
  pat_sinbar,
 }
@@ -1453,8 +1466,8 @@ function t_arena:new_wave()
  -- Set cur_pattern to new pattern
  -- Wait for cur_pattern to die
  self.wave_num += 1
- if #self.patternbag < 1 then
-  if self.wave_num > self.difficulty_cutoff then
+ if #self.patternbag < 1 or self.wave_num == self.difficulty_cutoff then
+  if self.wave_num >= self.difficulty_cutoff then
    printh("New hard/med bag")
    self.patternbag = arrConcat(lib_patterns_med, lib_patterns_hard)
   else
@@ -1464,6 +1477,7 @@ function t_arena:new_wave()
   shuffle_table(self.patternbag)
  end
  local pat = rndc(self.patternbag)
+ del(self.patternbag, pat)
  self.cur_pattern = self.stage:add(pat(self))
  return
 end
@@ -1481,7 +1495,7 @@ function t_arena:drawui()
  if (self.cur_pattern) then
   label = self.wave_num .. ':' .. self.cur_pattern.name
  end
- print(label, 0, 1)
+ print(label, 0, 1, 7)
 end
 
 local t_scoreclock = entity:extend{}
@@ -1496,7 +1510,7 @@ local t_scorefx = particle:extend{}
 function t_scorefx:init(pos, vel, score, color)
  self.score = score
  self.color = color
- particle.init(self, pos, vel, vec_zero, 30, 0)
+ particle.init(self, pos, vel, vec_zero, 30, color, 10)
 end
 function t_scorefx:draw()
  prints(self.score..'00', mrconcatu(self.pos, self.color, 0, true))
@@ -1529,9 +1543,15 @@ function t_inspectmenu:drawui()
  rect(mrconcatu(self.menubox, 7))
  for i,v in ipairs(lib_patterns) do
   local c = 7
-  if i == self.sel_index then
-   c = 10
-   print("♥", mrconcatu(self.sel_origin + vec(-8, i*8), 8))
+  local sel_index = self.sel_index
+  local symbols = {
+   [sel_index-1]="\f6❎",
+   [sel_index]="\f8♥",
+   [sel_index+1]="\f6🅾️"
+  }
+  if symbols[i] then
+   if (i == sel_index) c = 10
+   print(symbols[i], mrconcatu(self.sel_origin + vec(-8, i*8)))
   end
   print(v.name, mrconcatu(self.sel_origin + vec(0, i*8), c))
  end
