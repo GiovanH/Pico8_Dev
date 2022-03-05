@@ -1,16 +1,13 @@
 pico-8 cartridge // http://www.pico-8.com
 version 33
 __lua__
--- title
--- author
+-- hearten
+-- by giovanh
+
+-- todo constant first wave bullet style
+-- todo death animation, screen
 
 -- global vars
-
--- game controller restores health between waves,
---  picks and starts patterns
--- No-hit bonus
--- no-graze bonus
--- hp delta with juicy animated changes
 
 local debug = true  -- (stat(6) == 'debug')
 local cur_stage = nil
@@ -979,11 +976,11 @@ local b_missile = t_bullet:extend{
  anim = nil,
  size = vec(4),
  destroy_on_dmg = false,
- max_vel = 1.5
+ max_vel = 1.0
 }
 function b_missile:update()
  local v_towards = self.stage.o_soul.pos:__sub(self.pos):norm()
- self.acc = v_towards*0.03 + self.vel*-0.005
+ self.acc = v_towards*0.035 + self.vel*-0.005
  t_bullet.update(self)
  if self.vel:mag() > self.max_vel then
   self.vel = self.vel:norm()*self.max_vel
@@ -1282,9 +1279,11 @@ local pat_miner_d3 = pat_miner:extend{
 local pat_missile = t_pattern:extend{
  name = "missile",
  dmg = 4,
- lifespan = 8 * 60
+ lifespan = 8 * 60,
+ delay = 0
 }
 function pat_missile:coupdate()
+ yieldn(self.delay)
  self:addchild(b_missile(vec(rndr(0,128), 0), self.dmg))
 end
 
@@ -1343,6 +1342,9 @@ function pat_meteor:coupdate()
  end
 end
 
+local pat_missile_delayed = pat_missile:extend{
+  delay = 45
+}
 local pat_mined_missile = t_pattern_compound:extend{
  name = "missile (mined)",
  subpatterns = {pat_miner_d3, pat_missile}
@@ -1350,7 +1352,7 @@ local pat_mined_missile = t_pattern_compound:extend{
 
 local pat_comp_missile = t_pattern_compound:extend{
  name = "missile (compound)",
- subpatterns = {pat_missile, pat_missile}
+ subpatterns = {pat_missile, pat_missile_delayed}
 }
 
 local pat_comp_rain = t_pattern_compound:extend{
@@ -1466,7 +1468,9 @@ function t_arena:new_wave()
  -- Set cur_pattern to new pattern
  -- Wait for cur_pattern to die
  self.wave_num += 1
- if #self.patternbag < 1 or self.wave_num == self.difficulty_cutoff then
+ if self.wave_num == 1 then
+  self.patternbag = {pat_spreadthrow}
+ elseif #self.patternbag < 1 or self.wave_num == self.difficulty_cutoff then
   if self.wave_num >= self.difficulty_cutoff then
    printh("New hard/med bag")
    self.patternbag = arrConcat(lib_patterns_med, lib_patterns_hard)
@@ -1613,7 +1617,7 @@ function t_mainmenu:init()
  entity.init(self)
 end
 function t_mainmenu:drawui()
- for i, s in ipairs{"the title of", "the game"} do
+ for i, s in ipairs{"heart&"} do
   local x = (128 - (#s * 8)) / 2
   s = "\^w\^t" .. s
   print(s, x, 16+(i-1)*14 + 2, 1)
