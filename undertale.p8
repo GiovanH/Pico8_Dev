@@ -4,15 +4,18 @@ __lua__
 -- hearten
 -- by giovanh
 
--- todo constant first wave bullet style
--- todo death animation, screen
+-- todo back to main menu animation (smash bros style)
+-- todo death animation, screen (randomized?0)
+-- help menu
+-- bonus points on overheal
+-- better meter graphics
+-- better library menu graphics
+-- juicier score graphics
 
 -- global vars
 
 local debug = true  -- (stat(6) == 'debug')
 local cur_stage = nil
-
-local high_score = 10
 
 -->8
 -- utility
@@ -726,7 +729,6 @@ function t_soul:dmghit(dmg)
   if (not self.isdemo) self.hp -= dmg
   printa(self.isdemo, dmg, self.hp)
   self.stage.arena.waveperfect = false
-  -- TODO gameover logic
   self.invuln = 12
   sfx(00)
   return true
@@ -1003,7 +1005,8 @@ end
 local t_pattern = entity:extend{
  name = "??? pattern",
  lifespan = 200,
- dmg = 0
+ dmg = 0,
+ seen = false
 }
 function t_pattern:init(arena)
  entity.init(self)
@@ -1018,6 +1021,7 @@ function t_pattern:addchild(newbullet)
  if (self.stage) add(self.children, self.stage:add(newbullet))
 end
 function t_pattern:destroy()
+ self.__index.seen = true
  foreach(self.children, function(c) c:destroy() end)
  entity.destroy(self)
 end
@@ -1034,6 +1038,15 @@ local pat_rest = t_pattern:extend{
  name = "rest pattern",
  lifespan = 15
 }
+
+local pat_lockedrest = t_pattern:extend{
+ name = "??????",
+ lifespan = 480
+}
+function pat_lockedrest:toblurb()
+ return self.name
+ .. '\nbeat pattern\nto unlock'
+end
 
 local t_pattern_compound = t_pattern:extend{
  name = "base compound pattern",
@@ -1222,7 +1235,8 @@ end
 local pat_spreadthrow = t_pattern:extend{
  name = "spreadthrow",
  dmg = 1,
- lifespan = 5 * 60
+ lifespan = 5 * 60,
+ seen = true
 }
 function pat_spreadthrow:coupdate()
  local arena = self.stage.arena
@@ -1343,7 +1357,7 @@ function pat_meteor:coupdate()
 end
 
 local pat_missile_delayed = pat_missile:extend{
-  delay = 45
+ delay = 45
 }
 local pat_mined_missile = t_pattern_compound:extend{
  name = "missile (mined)",
@@ -1425,6 +1439,8 @@ function t_arena:update()
 
  if (self.stage.o_soul.hp <= 0) then
   -- game over
+  -- TODO more game over logic
+  save_cartdata()
   cur_stage = st_mainmenu()
  end
 
@@ -1463,6 +1479,9 @@ function t_arena:new_wave()
   return
  end
 
+ -- debug save
+ save_cartdata()
+
  -- Pick random pattern
  -- Add new pattern to stage
  -- Set cur_pattern to new pattern
@@ -1494,13 +1513,13 @@ function t_arena:draw()
  rect(mrconcat({drawbox:outline(1):unpack()}, 11))
  mob.draw(self)
 end
-function t_arena:drawui()
- local label = "undefined"
- if (self.cur_pattern) then
-  label = self.wave_num .. ':' .. self.cur_pattern.name
- end
- print(label, 0, 1, 7)
-end
+-- function t_arena:drawui()
+--  local label = "undefined"
+--  if (self.cur_pattern) then
+--   label = self.wave_num .. ':' .. self.cur_pattern.name
+--  end
+--  print(label, 0, 1, 7)
+-- end
 
 local t_scoreclock = entity:extend{}
 function t_scoreclock:drawui()
@@ -1540,45 +1559,60 @@ end
 
 local t_inspectmenu = entity:extend{
  sel_index = 1,
- menubox = bbox.fromxywh(16,88,96,32),
+ menubox = bbox.fromxywh(16,88,64,32),
  sel_origin = vec(92, 12)
 }
+function t_inspectmenu:onadd()
+ self:update_sel()
+end
+
 function t_inspectmenu:drawui()
  rect(mrconcatu(self.menubox, 7))
+ local sel_index = self.sel_index
+ local symbols = {
+  [sel_index-1]="\f6❎",
+  [sel_index]="\f8♥",
+  [sel_index+1]="\f6🅾️"
+ }
  for i,v in ipairs(lib_patterns) do
   local c = 7
-  local sel_index = self.sel_index
-  local symbols = {
-   [sel_index-1]="\f6❎",
-   [sel_index]="\f8♥",
-   [sel_index+1]="\f6🅾️"
-  }
   if symbols[i] then
    if (i == sel_index) c = 10
    print(symbols[i], mrconcatu(self.sel_origin + vec(-8, i*8)))
   end
-  print(v.name, mrconcatu(self.sel_origin + vec(0, i*8), c))
+  local label = "??????"
+  if (v.seen) label = v.name
+  print(label, mrconcatu(self.sel_origin + vec(0, i*8), c))
  end
 
  local cur_pat = self.stage.o_arena.cur_pattern
  if (cur_pat) print(cur_pat:toblurb(), mrconcatu(self.menubox.origin + vec(2), 7))
-
 end
 function t_inspectmenu:update()
  entity.update(self)
  local newindex = self.sel_index
+ -- Scroll up/down
  if (btnp(4)) newindex += 1
  if (newindex > #lib_patterns) newindex = 1
  if (btnp(5)) newindex -= 1
  if (newindex < 1 ) newindex = #lib_patterns
 
  if newindex != self.sel_index then
-  printa(newindex, #lib_patterns)
-  local arena = self.stage.o_arena
-  arena.onlypattern = lib_patterns[newindex]
-  arena.cur_pattern:destroy()
   self.sel_index = newindex
+  self:update_sel()
  end
+end
+function t_inspectmenu:update_sel()
+ -- Updates selection on change or init
+ printa(self.sel_index, #lib_patterns)
+ local arena = self.stage.o_arena
+ local focused_pattern = lib_patterns[self.sel_index]
+ if focused_pattern.seen then
+  arena.onlypattern = lib_patterns[self.sel_index]
+ else
+  arena.onlypattern = pat_lockedrest
+ end
+ if (arena.cur_pattern) arena.cur_pattern:destroy()
 end
 
 st_game_inspect = st_game:extend{
@@ -1595,7 +1629,7 @@ function st_game_inspect:init(pat_index)
  local o_inspectmenu = self:add(t_inspectmenu())
  o_inspectmenu.sel_index = pat_index
 
- self.o_arena.onlypattern = lib_patterns[pat_index]
+ -- self.o_arena.onlypattern = lib_patterns[pat_index]
 
  self.backheld = 0
 end
@@ -1612,46 +1646,86 @@ end
 
 -- Menus
 
-local t_mainmenu = entity:extend{}
-function t_mainmenu:init()
- entity.init(self)
-end
+local t_mainmenu = entity:extend{
+ textcolor=0,
+ greyscale=split"0, 0, 1, 5, 13, 6, 7"
+}
+-- function t_mainmenu:init()
+--  entity.init(self)
+-- end
 function t_mainmenu:drawui()
  for i, s in ipairs{"heart&"} do
   local x = (128 - (#s * 8)) / 2
   s = "\^w\^t" .. s
-  print(s, x, 16+(i-1)*14 + 2, 1)
-  print(s, x, 16+(i-1)*14, 7)
+  print(s, x, 16+(i-1)*14 + 2, self.greyscale[self.textcolor-4])
+  print(s, x, 16+(i-1)*14, self.greyscale[self.textcolor])
  end
+end
+function t_mainmenu:coupdate()
+ -- skip animation in debug mode
+ if not debug then
+  for i = 0, #self.greyscale do
+   self.textcolor = i
+   yieldn(10)
+  end
+  yieldn(30)
+ else
+  self.textcolor = #self.greyscale
+ end
+ self:mainmenu()
+end
+function t_mainmenu:mainmenu()
+ self.stage:add(choicer({
+    {"start", function()
+      cur_stage = st_game()
+     end},
+    {"library", function()
+      cur_stage = st_game_inspect(i)
+     end},
+    {"help", closure(self.mainmenu, self)}
+   }, {pos=vec(16, 64)}))
 end
 
 st_mainmenu = stage:extend{}
 function st_mainmenu:init()
  stage.init(self)
  self:add(t_mainmenu())
- self:rootmenu()
-end
-function st_mainmenu:rootmenu()
- self:add(choicer({
-    {"start", function()
-      cur_stage = st_game()
-     end},
-    {"library", closure(self.libmenu, self)},
-    {"help", nop}
-   }, {pos=vec(16, 64)}))
-end
-function st_mainmenu:libmenu()
- local choices = {}
- for i,v in ipairs(lib_patterns) do
-  add(choices, {v.name, function()
-     cur_stage = st_game_inspect(i)
-    end})
- end
- self:add(choicer(choices, {pos=vec(18, 66)}))
 end
 
 -->8
 --pico-8 builtins
+
+local has_save = cartdata("hearten")
+
+if has_save then
+ high_score = dget(0)
+ local seen_map = dget(1)
+ local val = 1
+
+ printa("loading", seen_map)
+ for i,v in ipairs(lib_patterns) do
+  -- printa(v.name, val, (val & seen_map))
+  if ((val & seen_map) > 0) v.seen = true
+  val *= 2
+ end
+else
+ high_score = 10
+end
+
+function save_cartdata()
+ dset(0, high_score)
+
+ printa("saving")
+ local seen_map = 0b0
+ local val = 1
+ for i,v in ipairs(lib_patterns) do
+  -- printa(v.name, val, v.seen)
+  if (v.seen) seen_map += val
+  val *= 2
+ end
+ -- printa(seen_map)
+ dset(1, seen_map)
+end
 
 function _init()
  cur_stage = st_mainmenu()
