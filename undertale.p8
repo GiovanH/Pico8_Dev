@@ -645,6 +645,22 @@ end
 
 -- Player
 
+local t_shakespr = mob:extend{
+ frame_len = 3,
+ shaketab={
+  vec(-1, -1),
+  vec(1, 1),
+  vec(-1, 0),
+  vec(1, 0),
+  vec(-1, 1),
+  vec(1, 1),
+ }
+}
+function t_shakespr:update()
+ self.offset = self.shaketab[flr(self.stage.mclock/self.frame_len) % #self.shaketab]
+ mob.update(self)
+end
+
 local t_soul = mob:extend{
  invuln = 0,
  dynamic = true,
@@ -661,23 +677,31 @@ function t_soul:init(pos)
  mob.init(self, pos, 0, vec(7))
 end
 function t_soul:explode()
- local anim_length = 90
- self.stage:schedule(anim_length, function()
-   cur_stage = st_mainmenu()
-  end)
  self.o_graze:destroy()
  self:destroy()
 
  -- TODO: Temp explosion
- local n = 12
- for i = 1, n do
-  self.stage:add(b_meteorexp(
-    self.pos,
-    vec(cos(i/n), sin(i/n))*0.95,
-    90,
-    0)
-  )
- end
+ local stage = self.stage  -- soul will be destroyed
+ stage:add(t_shakespr(self.pos+self.offset, self.spr, self.size, {ttl=30}))
+ -- stage:add(sprparticle(self.spr, vec(1), self.pos+self.offset, vec_zero, vec_zero, 30))
+ stage:schedule(30, function()
+   local n = 12
+   spr(0,0,0,1,1)
+   for x=0,6 do
+    for y=0,6 do
+     local p = self.pos + vec(x, y) + self.offset
+     stage:add(particle(
+       p,
+       vec(rndr(-0.5, 0.5), rndr(-2, -1)),
+       vec(0, 0.1),
+       60,
+       pget(x, y)))
+    end
+   end
+  end)
+ self.stage:schedule(120, function()
+   cur_stage = st_mainmenu()
+  end)
 
 end
 function t_soul:_moveif(step)
@@ -999,15 +1023,49 @@ local b_missile = t_bullet:extend{
  anim = nil,
  size = vec(4),
  destroy_on_dmg = false,
- max_vel = 1.0
+ max_vel = 1.0,
+ acc_angle = 0.75
 }
 function b_missile:update()
- local v_towards = self.stage.o_soul.pos:__sub(self.pos):norm()
- self.acc = v_towards*0.035 + self.vel*-0.005
- t_bullet.update(self)
+ local vec_to_player = self.stage.o_soul.pos:__sub(self.pos)
+ self.towards = atan2(vec_to_player:unpack())
+ local a = self.towards
+
+ -- always rotate the short way!
+ if (a-self.acc_angle>.5) a-=1
+ if (a-self.acc_angle<-.5) a+=1
+
+ -- gradually rotate toward the player
+ local vel_angle = atan2(self.vel:unpack())
+ local ang_diff = a-self.acc_angle
+ -- don't adjust if already on target
+ if abs(ang_diff) > 0.01 then
+  local newangle = sgn(ang_diff)/150
+  self.acc_angle += newangle
+  -- if far away, turn faster
+  if (vec_to_player:mag() > 50) self.acc_angle += newangle
+  self.acc_angle %= 1
+ end
+ -- move acceleration closer to towards player
+ self.acc = vec(.05, 0):rotate(self.acc_angle)
+
+ -- if angle ~ 90deg, slow down to avoid orbit
+ -- local angle_between = abs((self.acc_angle - vel_angle)%0.5)
+ -- printa(angle_between)
+ -- if angle_between > 0.23 and angle_between < 0.25 then
+ --  self.acc -= self.vel:norm()*0.05
+ -- end
+ -- local angle_between = abs(.5 + self.towards - vel_angle)
+ -- -- printa((self.towards - vel_angle), angle_between)
+ --  if angle_between < 0.12 then
+ --  printa("reverse!")
+ --  self.acc -= self.vel:norm()*0.05
+ -- end
+
  if self.vel:mag() > self.max_vel then
   self.vel = self.vel:norm()*self.max_vel
  end
+ t_bullet.update(self)
 end
 function b_missile:draw()
  pal(self.paltab)
@@ -1019,6 +1077,12 @@ function b_missile:draw()
  }
  draw_beam(path, self.pos, atan2(self.vel:unpack()), 7)
  t_bullet.draw(self)
+end
+function b_missile:drawdebug()
+ local spx, spy = self.pos:unpack()
+ line(spx, spy,
+  mrconcatu(self.pos+vec(10, 0):rotate(self.towards), 3))
+ t_bullet.drawdebug(self)
 end
 
 -- Patterns
