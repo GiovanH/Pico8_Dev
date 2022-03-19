@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 33
+version 34
 __lua__
 -- hearten
 -- by giovanh
@@ -11,6 +11,11 @@ __lua__
 -- better meter graphics
 -- better library menu graphics
 -- juicier score graphics
+-- wavey text effect on score bonus
+-- little dragon adventure pixel shatter effect
+-- nest2 background effects on heat up
+-- heart shaped meters
+-- multishooter pattern: 3 spread, then 2 spread, then 3 spread (maybe radiating out from the center? or radiating in?)
 
 -- global vars
 
@@ -152,9 +157,11 @@ function clamp(min_, query, max_)
 end
 
 -- print with shadow (optionally center)
-local function prints(s, x, y, c1, c2, left)
- local screen_width = 128
- if (left) x -= (#s * 4)
+local function prints(s, x, y, c1, c2, align)
+ -- align: 0 for right, 1 for center, 2 for left
+ -- local screen_width = 128
+ s..=''  -- Coerce to string
+ x -= (#s * ((align or 0)*2))
  print(s, x, y+1, c2 or 1)
  print(s, x, y, c1 or 7)
 end
@@ -683,24 +690,28 @@ function t_soul:explode()
  -- TODO: Temp explosion
  local stage = self.stage  -- soul will be destroyed
  stage:add(t_shakespr(self.pos+self.offset, self.spr, self.size, {ttl=30}))
- -- stage:add(sprparticle(self.spr, vec(1), self.pos+self.offset, vec_zero, vec_zero, 30))
  stage:schedule(30, function()
    local n = 12
+   local posoffset = self.pos + self.offset
+   -- Explode entire actor
    spr(0,0,0,1,1)
    for x=0,6 do
     for y=0,6 do
-     local p = self.pos + vec(x, y) + self.offset
-     stage:add(particle(
+     local p = posoffset + vec(x, y)
+     stage:add(
+      particle(
        p,
        vec(rndr(-0.5, 0.5), rndr(-2, -1)),
        vec(0, 0.1),
        60,
-       pget(x, y)))
-    end
-   end
+       pget(x, y)
+      )
+     )
+    end  -- end for y
+   end  -- end for x
   end)
  self.stage:schedule(120, function()
-   cur_stage = st_mainmenu()
+   cur_stage = st_postgame(stage)
   end)
 
 end
@@ -1614,8 +1625,8 @@ local t_scoreclock = entity:extend{}
 function t_scoreclock:drawui()
  local highcol = 7
  if (high_score == self.stage.score) highcol = 10
- prints("score ".. self.stage.score..'00', 128, 116, 7, 0, true)
- prints("high ".. high_score..'00', 128, 122, highcol, 0, true)
+ prints("score ".. self.stage.score..'00', 128, 116, 7, 0, 2)
+ prints("high ".. high_score..'00', 128, 122, highcol, 0, 2)
 end
 
 local t_scorefx = particle:extend{}
@@ -1625,7 +1636,7 @@ function t_scorefx:init(pos, vel, score, color)
  particle.init(self, pos, vel, vec_zero, 30, color, 10)
 end
 function t_scorefx:draw()
- prints(self.score..'00', mrconcatu(self.pos, self.color, 0, true))
+ prints(self.score..'00', mrconcatu(self.pos, self.color, 0, 2))
 end
 
 st_game = stage:extend{}
@@ -1735,6 +1746,59 @@ end
 
 -- Menus
 
+local t_postgame = entity:extend{}
+function t_postgame:init(game)
+ entity.init(self)
+ self.game = game
+ self.ticks = 0
+end
+function t_postgame:drawui()
+ local s = "heart end"
+ local x = (128 - (#s * 8)) / 2
+ s = "\^w\^t" .. s
+ print(s, x, 16, 7)
+ local tick_level = self.ticks
+ prints(self.ticks, 64, 0, 7, 0, 1)
+
+ function r(i) return 16+(7*i) end
+ function myprint(s, i)
+  prints(s, 64, r(i), 7, 0, 1)
+ end
+ if tick_level > 1 then
+  myprint("score", 2)
+  myprint(self.game.score..'00', 3)
+ end
+ if tick_level > 2 then
+  myprint("high", 5)
+  myprint(high_score..'00', 6)
+ end
+ if tick_level > 6 then
+  prints("🅾️again", 32, 112, 7, 0, 1)
+  prints("❎return", 96, 112, 7, 0, 1)
+ end
+end
+function t_postgame:coupdate()
+ for x=0,6 do
+  yieldn(30)
+  self.ticks += 1
+  sfx(002)
+ end
+ while true do
+  if (btnp(5)) cur_stage = st_mainmenu()
+  if (btnp(4)) cur_stage = st_game()
+  yield()
+ end
+end
+
+st_postgame = stage:extend{}
+function st_postgame:init(game)
+ stage.init(self)
+ self:add(t_postgame(game))
+-- self:schedule(120, function()
+--   cur_stage = st_mainmenu()
+--  end)
+end
+
 local t_mainmenu = entity:extend{
  textcolor=0,
  greyscale=split"0, 0, 1, 5, 13, 6, 7"
@@ -1743,12 +1807,13 @@ local t_mainmenu = entity:extend{
 --  entity.init(self)
 -- end
 function t_mainmenu:drawui()
- for i, s in ipairs{"heart&"} do
-  local x = (128 - (#s * 8)) / 2
-  s = "\^w\^t" .. s
-  print(s, x, 16+(i-1)*14 + 2, self.greyscale[self.textcolor-4])
-  print(s, x, 16+(i-1)*14, self.greyscale[self.textcolor])
- end
+ -- for i, s in ipairs{"heart&"} do
+ local s = "heart&"
+ local x = (128 - (#s * 8)) / 2
+ s = "\^w\^t" .. s
+ print(s, x, 16 + 2, self.greyscale[self.textcolor-4])
+ print(s, x, 16, self.greyscale[self.textcolor])
+-- end
 end
 function t_mainmenu:coupdate()
  -- skip animation in debug mode
@@ -1892,7 +1957,7 @@ __map__
 __sfx__
 000100001d0501a0500c0500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 010800001162500600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600
-001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000500000555005550055500455000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
