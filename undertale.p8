@@ -859,7 +859,7 @@ end
 local t_warnbox = mob:extend{}
 function t_warnbox:draw()
  color(8)
- rect(self.hbox:grow(vec_noneone):unpack())
+ rect(self.hbox:unpack())
  print("!", self.hbox:center():__sub(1, 3):unpack())
 -- mob.draw(self)
 end
@@ -1090,9 +1090,11 @@ function b_missile:draw()
  t_bullet.draw(self)
 end
 function b_missile:drawdebug()
- local spx, spy = self.pos:unpack()
- line(spx, spy,
-  mrconcatu(self.pos+vec(10, 0):rotate(self.towards), 3))
+ if debug then
+  local spx, spy = self.pos:unpack()
+  line(spx, spy,
+   mrconcatu(self.pos+vec(10, 0):rotate(self.towards), 3))
+ end
  t_bullet.drawdebug(self)
 end
 
@@ -1629,11 +1631,13 @@ function t_scoreclock:drawui()
  prints("high ".. high_score..'00', 128, 122, highcol, 0, 2)
 end
 
-local t_scorefx = particle:extend{}
+local t_scorefx = particle:extend{
+ ttl = 60
+}
 function t_scorefx:init(pos, vel, score, color)
  self.score = score
  self.color = color
- particle.init(self, pos, vel, vec_zero, 30, color, 10)
+ particle.init(self, pos, vel, vec_zero, self.ttl, color, 10)
 end
 function t_scorefx:draw()
  prints(self.score..'00', mrconcatu(self.pos, self.color, 0, 2))
@@ -1654,7 +1658,7 @@ function st_game:addscore(points, color)
  color = color or 7
  self.score += points
  high_score = max(high_score, self.score)
- self:add(t_scorefx(vec(128, 116), vec(0, -1), points, color))
+ self:add(t_scorefx(vec(128, 116), vec(0, -0.5), points, color))
 end
 
 local t_inspectmenu = entity:extend{
@@ -1664,6 +1668,7 @@ local t_inspectmenu = entity:extend{
 }
 function t_inspectmenu:onadd()
  self:update_sel()
+ self.backheld = 0
 end
 
 function t_inspectmenu:drawui()
@@ -1687,6 +1692,11 @@ function t_inspectmenu:drawui()
 
  local cur_pat = self.stage.o_arena.cur_pattern
  if (cur_pat) print(cur_pat:toblurb(), mrconcatu(self.menubox.origin + vec(2), 7))
+
+ -- TODO backheld gauge
+ print("❎",5, 108, 5)
+ circ(8, 120, 6, 5)
+ if (self.backheld > 1) circfill(8, 120, self.backheld/10, 2)
 end
 function t_inspectmenu:update()
  entity.update(self)
@@ -1701,6 +1711,14 @@ function t_inspectmenu:update()
   self.sel_index = newindex
   self:update_sel()
  end
+
+ if (btn(5)) then
+  self.backheld += 1
+ else
+  self.backheld = max(0, self.backheld-2)
+ end
+ -- TODO "hold back" entity w/ animation
+ if (self.backheld > 60) cur_stage = st_mainmenu()
 end
 function t_inspectmenu:update_sel()
  -- Updates selection on change or init
@@ -1730,18 +1748,6 @@ function st_game_inspect:init(pat_index)
  o_inspectmenu.sel_index = pat_index
 
  -- self.o_arena.onlypattern = lib_patterns[pat_index]
-
- self.backheld = 0
-end
-function st_game_inspect:update()
- st_game.update(self)
- if (btn(5)) then
-  self.backheld += 1
- else
-  self.backheld = max(0, self.backheld-1)
- end
- -- TODO "hold back" entity w/ animation
- if (self.backheld > 60) cur_stage = st_mainmenu()
 end
 
 -- Menus
@@ -1883,6 +1889,14 @@ end
 
 function _init()
  cur_stage = st_mainmenu()
+ menuitem(1, "reset save data",
+  function()
+   for i=0,1 do
+    dset(i, 0)
+   end
+   extcmd("reset")
+  end
+ )
 end
 
 function _update60()
