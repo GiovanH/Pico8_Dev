@@ -866,6 +866,24 @@ end
 
 -- Bullets
 
+-- Super cheap particle to use for trails
+local t_trailparticle = entity:extend{
+ critical=false,
+ col=5,
+ ttl=240
+}
+function t_trailparticle:init(pos)
+ entity.init(self)
+ self.pos = pos
+ if (stat(7) < 60 and not self.critical) self:destroy()
+end
+function t_trailparticle:update()
+ entity.update(self)
+end
+function t_trailparticle:draw()
+ pset(self.pos.x, self.pos.y, self.col)
+end
+
 local t_bullet = mob:extend{
  z = 6,
  dynamic = true,
@@ -904,6 +922,9 @@ function t_bullet:update()
 
  if (self.dmg_color == "blue") self.paltab = {[7]=12}
  if (self.dmg_color == "orange") self.paltab = {[7]=9}
+
+ -- if (self.stage.mclock % 4 == 0)
+ -- if (self.vel:mag() > 0 and debug and self.stage.mclock % 4 == 0) self.stage:add(t_trailparticle(self.pos))
 
  mob.update(self)
 end
@@ -994,6 +1015,7 @@ b_meteorexp = t_bullet:extend{
  frame_len = 4,
  size = vec(6),
  bsize = vec(4),
+ friction = 0.95,
  -- anchor = vec(-2),
  -- hbox_offset = vec(-2),
  vel = vec(0, 0)
@@ -1004,7 +1026,12 @@ function b_meteorexp:init(pos, vel, ttl, dmg)
  t_bullet.init(self, pos, dmg)
 end
 function b_meteorexp:update()
- self.vel *= 0.95
+ self.vel *= self.friction
+ if (self.vel:mag() < 0.1) then
+  -- cheapen calculations
+  self.vel = vec_zero
+  self.friction = 1
+ end
  t_bullet.update(self)
 end
 
@@ -1098,6 +1125,37 @@ function b_missile:drawdebug()
  t_bullet.drawdebug(self)
 end
 
+local b_tocenter = t_bullet:extend{
+ ttl = 300,
+ anim = {001},
+ -- anim = {016, 017, 018, 019},
+ -- frame_len = 4,
+ size = vec(4),
+ spin_amt = 0
+}
+function b_tocenter:coupdate()
+ local target = self.stage.arena.hbox:center()
+ while true do
+  self.vel = target:__sub(self.pos):norm()
+  self.vel += self.vel:rotate(0.25):__mul(self.spin_amt)
+  local distance = self.pos:__sub(target)
+  if distance:mag() < 1 then
+   self:destroy()
+  end
+  yield()
+ end
+end
+
+local b_tocenter_spin = b_tocenter:extend{
+ spin_amt = 1
+}
+
+local b_denywall = b_meteorexp:extend{
+ friction = 0.97,
+ anim = {001},
+ size = vec(4)
+}
+
 -- Patterns
 
 local t_pattern = entity:extend{
@@ -1183,20 +1241,24 @@ local pat_rain = t_pattern:extend{
  name = "rain",
  dmg = 1,
  lifespan = 8 * 60,
- b = b_fall
+ b = b_fall,
+ delay = 20,
+ fallspd = vec(0, 0.3)
 }
 function pat_rain:coupdate()
  local arena = self.stage.arena
  -- our turn
  while true do
-  self:addchild(self.b(
-    vec(
-     rndr(arena.hbox.x0, arena.hbox.x1-4),
-     arena.hbox.y0-8
-    ),
-    self.dmg
-   ))
-  yieldn(20)
+  local c = self.b(
+   vec(
+    rndr(arena.hbox.x0, arena.hbox.x1-4),
+    arena.hbox.y0-8
+   ),
+   self.dmg
+  )
+  c.vel = self.fallspd
+  self:addchild(c)
+  yieldn(self.delay)
  end
 end
 
@@ -1296,10 +1358,12 @@ function pat_circthrow:coupdate()
  local arena = self.stage.arena
  local r = 50
  local n = self.numbullets
+ local rotation = rndi(4)/4  -- rotate whole spiral around center
+ printa(rotation)
  for i = 1, n do
   self:addchild(b_thrown(vec(
-     r*cos(i/n),
-     r*sin(i/n)
+     r*cos(i/n + rotation),
+     r*sin(i/n + rotation)
     ) + arena.hbox:center(),
     2*n+10,
     self.dmg
@@ -1349,6 +1413,38 @@ function pat_spreadthrow:coupdate()
    self:addchild(b)
   end
   yieldn(50)
+ end
+end
+
+local pat_spreadthrow_mix = t_pattern:extend{
+ name = "spreadthrow mix",
+ dmg = 1,
+ lifespan = 5 * 60,
+ seen = true
+}
+function pat_spreadthrow_mix:coupdate()
+ local arena = self.stage.arena
+ while true do
+  local pos = vec(
+   rndr(arena.hbox.x0, arena.hbox.x1-4),
+   arena.hbox.y0-8
+  )
+  for angle_offset in all{-0.07, 0, 0.07} do
+   local b = b_thrown(pos, 30, self.dmg)
+   b.angle_offset = angle_offset
+   self:addchild(b)
+  end
+  yieldn(40)
+  local pos = vec(
+   rndr(arena.hbox.x0, arena.hbox.x1-4),
+   arena.hbox.y0-8
+  )
+  for angle_offset in all{-0.9, -0.03, 0.03, 0.9} do
+   local b = b_thrown(pos, 30, self.dmg)
+   b.angle_offset = angle_offset
+   self:addchild(b)
+  end
+  yieldn(40)
  end
 end
 
@@ -1435,11 +1531,11 @@ function pat_meteor:coupdate()
   -- ))
 
   self.stage:schedule(self.warntime, function()
-    local n = 12
+    local n = 10
     for i = 1, n do
      self:addchild(b_meteorexp(
        hitbox:center(),
-       vec(cos(i/n), sin(i/n))*0.95,
+       vec(cos(i/n), sin(i/n))*0.90,
        bttl,
        self.dmg)
      )
@@ -1451,6 +1547,79 @@ function pat_meteor:coupdate()
     add, vecs, v
    ))
   yieldn(self.pause_between)
+ end
+end
+
+local pat_circgrav = t_pattern:extend{
+ name = "gravity",
+ dmg = 1,
+ lifespan = 6 * 60,
+ numbullets = 4,
+ delay = 60,
+ bullet = b_tocenter
+}
+function pat_circgrav:coupdate()
+ while true do
+  self:spawnwave(self.numbullets, 0)
+  yieldn(self.delay)
+  self:spawnwave(self.numbullets, 1/(self.numbullets*2))
+  yieldn(self.delay)
+ end
+end
+function pat_circgrav:spawnwave(n, angle_offset)
+ local arena = self.stage.arena
+ local r = 70
+ for i = 1, n do
+  self:addchild(self.bullet(vec(
+     r*cos(i/n + angle_offset),
+     r*sin(i/n + angle_offset)
+    ) + arena.hbox:center(),
+    2*n+10,
+    self.dmg
+   )
+  )
+ end
+end
+
+local pat_circgrav_dense = pat_circgrav:extend{
+ name = "gravity dense",
+ dmg = 1,
+ lifespan = 6 * 60,
+ numbullets = 6,
+}
+
+local pat_circgrav_rot = pat_circgrav:extend{
+ name = "gravspin",
+ dmg = 1,
+ lifespan = 6 * 60,
+ numbullets = 5,
+ bullet = b_tocenter_spin
+}
+
+local pat_denyring = t_pattern:extend{
+ name = "denial ring",
+ dmg = 1,
+ lifespan = 6 * 60,
+ numbullets = 24
+}
+function pat_denyring:coupdate()
+ local arena = self.stage.arena
+ local r = 60
+ local n = self.numbullets
+ local rotation = rndi(4)/4  -- rotate whole spiral around center
+ printa(rotation)
+ for i = 1, n do
+  local bpos = vec(
+   r*cos(i/n),
+   r*sin(i/n)
+  ) + arena.hbox:center()
+  local bul = b_denywall(
+   bpos,
+   self.stage.arena.hbox:center():__sub(bpos):norm(),
+   self.lifespan,
+   self.dmg
+  )
+  self:addchild(bul)
  end
 end
 
@@ -1469,12 +1638,37 @@ local pat_comp_missile = t_pattern_compound:extend{
 
 local pat_comp_rain = t_pattern_compound:extend{
  name = "rain (compound)",
- subpatterns = {pat_miner, pat_rain_red}
+ subpatterns = {pat_miner, pat_rain:extend{
+   b = b_fall:extend{dmg_color="orange"}
+  }
+ }
+}
+
+local pat_comp_rain_2 = t_pattern_compound:extend{
+ name = "rain (compound 2)",
+ subpatterns = {pat_rain:extend{
+   fallspd = vec(0, 0.3),
+   delay = 40
+  }, pat_rain:extend{
+   fallspd = vec(0, 0.6),
+   delay = 40
+  }
+ }
 }
 
 local pat_comp_spread = t_pattern_compound:extend{
  name = "spread (compound)",
  subpatterns = {pat_spreadthrow, pat_redbar}
+}
+
+local pat_comp_grav = t_pattern_compound:extend{
+ name = "gravity (compound)",
+ subpatterns = {pat_circgrav, pat_denyring}
+}
+
+local pat_comp_gravdense = t_pattern_compound:extend{
+ name = "gravity (supercompound)",
+ subpatterns = {pat_circgrav_dense, pat_denyring}
 }
 
 -- local pat_comp_bars = t_pattern_compound:extend{
@@ -1487,18 +1681,26 @@ local lib_patterns_easy = {
  pat_missile,
  pat_gapbar,
  pat_rain,
+ pat_circgrav,
+ pat_denyring,
 }
 local lib_patterns_med = {
  pat_spreadthrow,
  pat_meteor,
  pat_circthrow,
  pat_randthrow,
+ pat_circgrav_rot,
+ pat_circgrav_dense,
+ pat_comp_rain_2,
+ pat_comp_grav
 }
 local lib_patterns_hard = {
  pat_comp_missile,
  pat_mined_missile,
  pat_comp_rain,
  pat_sinbar,
+ pat_comp_gravdense,
+ pat_spreadthrow_mix
 }
 
 local lib_patterns = arrConcat(lib_patterns_easy, lib_patterns_med, lib_patterns_hard)
@@ -1679,15 +1881,16 @@ function t_inspectmenu:drawui()
   [sel_index]="\f8♥",
   [sel_index+1]="\f6🅾️"
  }
+ local sel_origin = self.sel_origin - vec(0, sel_index*8)
  for i,v in ipairs(lib_patterns) do
   local c = 7
   if symbols[i] then
    if (i == sel_index) c = 10
-   print(symbols[i], mrconcatu(self.sel_origin + vec(-8, i*8)))
+   print(symbols[i], mrconcatu(sel_origin + vec(-8, i*8)))
   end
   local label = "??????"
   if (v.seen) label = v.name
-  print(label, mrconcatu(self.sel_origin + vec(0, i*8), c))
+  print(label, mrconcatu(sel_origin + vec(0, i*8), c))
  end
 
  local cur_pat = self.stage.o_arena.cur_pattern
@@ -1747,7 +1950,7 @@ function st_game_inspect:init(pat_index)
  local o_inspectmenu = self:add(t_inspectmenu())
  o_inspectmenu.sel_index = pat_index
 
- -- self.o_arena.onlypattern = lib_patterns[pat_index]
+-- self.o_arena.onlypattern = lib_patterns[pat_index]
 end
 
 -- Menus
@@ -1859,13 +2062,21 @@ local has_save = cartdata("hearten")
 
 if has_save then
  high_score = dget(0)
- local seen_map = dget(1)
  local val = 1
 
- printa("loading", seen_map)
- for i,v in ipairs(lib_patterns) do
+ for i,v in ipairs(lib_patterns_easy) do
   -- printa(v.name, val, (val & seen_map))
-  if ((val & seen_map) > 0) v.seen = true
+  if ((val & dget(1)) > 0) v.seen = true
+  val *= 2
+ end
+ for i,v in ipairs(lib_patterns_med) do
+  -- printa(v.name, val, (val & seen_map))
+  if ((val & dget(2)) > 0) v.seen = true
+  val *= 2
+ end
+ for i,v in ipairs(lib_patterns_hard) do
+  -- printa(v.name, val, (val & seen_map))
+  if ((val & dget(3)) > 0) v.seen = true
   val *= 2
  end
 else
@@ -1878,13 +2089,27 @@ function save_cartdata()
  printa("saving")
  local seen_map = 0b0
  local val = 1
- for i,v in ipairs(lib_patterns) do
-  -- printa(v.name, val, v.seen)
+ for i,v in ipairs(lib_patterns_easy) do
   if (v.seen) seen_map += val
   val *= 2
  end
- -- printa(seen_map)
  dset(1, seen_map)
+
+ local seen_map = 0b0
+ local val = 1
+ for i,v in ipairs(lib_patterns_med) do
+  if (v.seen) seen_map += val
+  val *= 2
+ end
+ dset(2, seen_map)
+
+ local seen_map = 0b0
+ local val = 1
+ for i,v in ipairs(lib_patterns_hard) do
+  if (v.seen) seen_map += val
+  val *= 2
+ end
+ dset(3, seen_map)
 end
 
 function _init()
@@ -1897,6 +2122,16 @@ function _init()
    extcmd("reset")
   end
  )
+ if debug then
+  menuitem(2, "unlock library",
+   function()
+    for i,v in ipairs(lib_patterns) do
+     v.seen = true
+    end
+    save_cartdata()
+   end
+  )
+ end
 end
 
 function _update60()
