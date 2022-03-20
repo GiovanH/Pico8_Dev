@@ -22,6 +22,18 @@ __lua__
 local debug = true  -- (stat(6) == 'debug')
 local cur_stage = nil
 
+sfx_dmg = 000
+sfx_graze = 001
+sfx_screentick = 002
+sfx_heal = 003
+sfx_menutick = 004
+sfx_overheal = 005
+
+points_wave = 1
+points_waveperfect = 3
+points_heal = 2
+points_overheal = 4
+
 -->8
 -- utility
 
@@ -531,6 +543,7 @@ function stage:update()
  -- update clock
  self.mclock = (self.mclock + 1) % 27720
  -- update tasks
+ -- printa("stage updating", #self._tasks, "tasks", #self.objects, "objects", stat(7), "fps", stat(1), "cpu")
  for handle, task in pairs(self._tasks) do
   task.ttl -= 1
   if task.ttl <= 0 then
@@ -572,20 +585,11 @@ end
 -->8
 -- game utility
 
--- focus stack
--- use this to keep track of what
--- player input should be influencing.
--- global because dialog/others are global.
--- get(), push(v), pop(expected)
-local focus = {}
-function focus:get() return self[#self] end
-function focus:is(q) return self:get() == q end
-function focus:isnt(q) return self:get() != q end
-function focus:push(s) add(self, s) end
-function focus:pop(expected)
- local r = deli(self)
- if (expected) assert(expected == r, "popped '" .. r .. "', not " .. expected)
- return r
+function drawtitle(s, c1, c2)
+ local x = (128 - (#s * 8)) / 2
+ s = "\^w\^t" .. s
+ print(s, x, 16 + 2, c2)
+ print(s, x, 16, c1)
 end
 
 local choicer = entity:extend{
@@ -614,10 +618,6 @@ function choicer:init(choices, exopts)
  self.size = self.char_size_sp:dotp(width, #self.choices)
  self.size += self.padding*2 - vec(1, 3)  -- up to but not equal - last 2px space
 end
-function choicer:onadd()
- self.focus = 'choice' .. #self.stage.objects
- self.stage:schedule(0, closure(focus.push, focus, self.focus))
-end
 function choicer:drawui()
  if (self.choices == nil) return
  local rbox = bbox(self.pos, self.size)
@@ -630,7 +630,6 @@ function choicer:drawui()
      vec(2, i-1):dotp(self.char_size_sp)
     ), v[3] or 7))
  end
- if (focus:isnt(self.focus)) return
  color(8)
  print("♥ ",
   ppos:__add(
@@ -638,19 +637,18 @@ function choicer:drawui()
   ):unpack())
 end
 function choicer:update()
- if (focus:isnt(self.focus)) return
 
- if (btnp(2)) self.selected -= 1; sfx(004)
- if (btnp(3)) self.selected += 1; sfx(004)
+ if (btnp(2)) self.selected -= 1; sfx(sfx_menutick)
+ if (btnp(3)) self.selected += 1; sfx(sfx_menutick)
  self.selected = clamp(1, self.selected, #self.choices)
  if btnp(4) then
-  focus:pop(self.focus)
   self.choices[self.selected][2]()
   self:destroy()
  end
 end
 
--- Player
+-->8
+-- player
 
 local t_shakespr = mob:extend{
  frame_len = 3,
@@ -673,8 +671,10 @@ local t_soul = mob:extend{
  dynamic = true,
  frame_len = 2,
  hp = 20,
+ maxhp = 20,
  sp = 0,
  maxsp = 20,
+ heal_amt = 1,
  z = 7,
  isdemo = false,
  offset = vec(-3, -3),
@@ -785,18 +785,24 @@ function t_soul:dmghit(dmg)
   -- printa(self.isdemo, dmg, self.hp)
   self.stage.arena.waveperfect = false
   self.invuln = 12
-  sfx(00)
+  sfx(sfx_dmg)
   return true
  end
 end
 function t_soul:ongraze(bullet)
  if (self.invuln > 0) return false
  if (not self.isdemo) self.sp += 1
- sfx(01)
- if (self.sp >= 20) then
+ sfx(sfx_graze)
+ if (self.sp >= self.maxsp) then
   self.sp = 0
-  self.hp = min(20, self.hp + 1)
-  self.stage:addscore(2, 11)
+  if self.hp < self.maxhp then
+   sfx(sfx_heal)
+   self.hp = min(self.maxhp, self.hp + self.heal_amt)
+   self.stage:addscore(points_heal, 11)
+  else
+   sfx(sfx_overheal)
+   self.stage:addscore(points_overheal, 11)
+  end
  end
  return true
 end
@@ -810,15 +816,15 @@ function t_soul:draw()
 end
 function t_soul:drawui()
  if (self.isdemo) return
- local amt, max, col, origin = self.hp, 20, 8, vec(8, 118)
+ local amt, max, col, origin = self.hp, self.maxhp, 8, vec(8, 118)
  local perc = amt / max
  local hpbox = bbox(origin, vec(60, 8))
  local hplostv = vec(hpbox.w * (perc - 1), 0)
  rectfill(mrconcatu(hpbox:grow(hplostv), col))
  rect(mrconcatu(hpbox, 10))
- print(amt .. "/" .. max, mrconcatu(origin+vec(2,2), 9))
+ print(amt .. "/" .. max, mrconcatu(origin+vec(2,2), 0))
 
- local amt, max, col, origin = self.sp, 20, 3, vec(8, 96)
+ local amt, max, col, origin = self.sp, self.maxsp, 3, vec(8, 96)
  local perc = amt / max
  local hpbox = bbox(origin, vec(8, -60))
  local hplostv = vec(0, hpbox.h * (perc - 1))
@@ -864,7 +870,8 @@ function t_warnbox:draw()
 -- mob.draw(self)
 end
 
--- Bullets
+-->8
+-- bullets
 
 -- Super cheap particle to use for trails
 local t_trailparticle = entity:extend{
@@ -945,7 +952,7 @@ function t_bullet_area:init(pos, dmg, size, ttl)
 end
 function t_bullet_area:draw()
  pal(self.paltab)
- paltt(self.tcol)
+ -- paltt(self.tcol)
  rectfill(mrconcatu(self.hbox:grow(vec_noneone), 7))
  mob.drawdebug(self)
 end
@@ -975,7 +982,6 @@ function b_area_sinbar:coupdate()
   yield()
  end
 end
-local b_area_cosbar = b_area_sinbar:extend{xfunc = cos}
 
 local b_redbar_tb = b_area_gapbar:extend{
  z = 5,
@@ -1022,6 +1028,7 @@ function b_meteorexp:init(pos, vel, ttl, dmg)
  self.vel = vel
  self.ttl = ttl
  t_bullet.init(self, pos, dmg)
+ if (vel.x == 0 or vel.y == 0) self.friction -= 0.002  -- yeah,
 end
 function b_meteorexp:update()
  self.vel *= self.friction
@@ -1149,12 +1156,13 @@ local b_tocenter_spin = b_tocenter:extend{
 }
 
 local b_denywall = b_meteorexp:extend{
- friction = 0.97,
+ friction = 0.969,
  anim = {001},
  size = vec(4)
 }
 
--- Patterns
+-->8
+-- patterns
 
 local t_pattern = entity:extend{
  name = "??? pattern",
@@ -1267,7 +1275,8 @@ local pat_rain_red = pat_rain:extend{
 local pat_sinbar = t_pattern:extend{
  name = "sinbar",
  dmg = 2,
- lifespan = 500
+ lifespan = 500,
+ bullets = {b_area_sinbar, b_area_sinbar:extend{xfunc = cos}}
 }
 function pat_sinbar:coupdate()
  local arena = self.stage.arena
@@ -1275,7 +1284,7 @@ function pat_sinbar:coupdate()
  -- our turn
  while true do
   local width = rndr(arena.hbox.x0+gap, arena.hbox.x1-gap)
-  local bar = rndc{b_area_sinbar, b_area_cosbar}
+  local bar = rndc(self.bullets)
   self:addchild(bar(
     vec(-64, -4),
     vec(width+64, 4),
@@ -1290,31 +1299,12 @@ function pat_sinbar:coupdate()
  end
 end
 
-local pat_gapbar = t_pattern:extend{
+local pat_gapbar = pat_sinbar:extend{
  name = "gapbar",
  dmg = 2,
- lifespan = 500
+ lifespan = 500,
+ bullets = {b_area_gapbar}
 }
-function pat_gapbar:coupdate()
- local arena = self.stage.arena
- local gap = 20
- -- our turn
- while true do
-  local go = (gap/2)
-  local width = rndr(arena.hbox.x0+go, arena.hbox.x1-go)
-  self:addchild(b_area_gapbar(
-    vec(-64, -4),
-    vec(width+64, 4),
-    self.dmg
-   ))
-  self:addchild(b_area_gapbar(
-    vec(width+gap, -4),
-    vec(128-width, 4),
-    self.dmg
-   ))
-  yieldn(80)
- end
-end
 
 local pat_redbar = t_pattern:extend{
  name = "redbar",
@@ -1394,53 +1384,75 @@ end
 local pat_spreadthrow = t_pattern:extend{
  name = "sprdgun",
  dmg = 1,
- lifespan = 5 * 60,
- seen = true
+ lifespan = 6 * 50,
+ seen = true,
+ bullet = b_thrown
 }
 function pat_spreadthrow:coupdate()
- local arena = self.stage.arena
  while true do
-  local pos = vec(
-   rndr(arena.hbox.x0, arena.hbox.x1-4),
-   arena.hbox.y0-8
-  )
-  for angle_offset in all{-0.07, 0, 0.07} do
-   local b = b_thrown(pos, 30, self.dmg)
-   b.angle_offset = angle_offset
-   self:addchild(b)
-  end
+  self:fire(self:firepos(), 3)
   yieldn(50)
  end
 end
+function pat_spreadthrow:fire(pos, numbullets)
+ local spreads = {
+  [3] = {-0.07, 0, 0.07},
+  [4] = {-0.09, -0.03, 0.03, 0.09}
+ }
+ for angle_offset in all(spreads[numbullets]) do
+  local b = self.bullet(pos, 30, self.dmg)
+  b.angle_offset = angle_offset
+  self:addchild(b)
+ end
+end
+function pat_spreadthrow:firepos()
+ local arena = self.stage.arena
+ return vec(
+  rndr(arena.hbox.x0, arena.hbox.x1-4),
+  arena.hbox.y0-8
+ )
+end
 
-local pat_spreadthrow_mix = t_pattern:extend{
+
+local pat_spreadthrow_rapid = pat_spreadthrow:extend{
+ name = "sprdgunr",
+ seen = false,
+ bullet = b_thrown:extend{anim={001}, size=vec(4)},
+ lifespan = 390, -- (32 + 58) * 4 + 30
+}
+function pat_spreadthrow_rapid:coupdate()
+ while true do
+  local p = self:firepos()
+  for i=0,4 do
+  self:fire(p, 3)
+  yieldn(8)
+  end
+  yieldn(58)
+ end
+end
+
+local pat_spreadthrow_odd = pat_spreadthrow:extend{
+ name = "sprdguno",
+ seen = false
+}
+function pat_spreadthrow_odd:coupdate()
+ while true do
+  self:fire(self:firepos(), 4)
+  yieldn(40)
+ end
+end
+
+local pat_spreadthrow_mix = pat_spreadthrow:extend{
  name = "sprdgun2",
  dmg = 1,
  lifespan = 5 * 60,
- seen = true
+ seen = false
 }
 function pat_spreadthrow_mix:coupdate()
- local arena = self.stage.arena
  while true do
-  local pos = vec(
-   rndr(arena.hbox.x0, arena.hbox.x1-4),
-   arena.hbox.y0-8
-  )
-  for angle_offset in all{-0.07, 0, 0.07} do
-   local b = b_thrown(pos, 30, self.dmg)
-   b.angle_offset = angle_offset
-   self:addchild(b)
-  end
+  self:fire(self:firepos(), 3)
   yieldn(40)
-  local pos = vec(
-   rndr(arena.hbox.x0, arena.hbox.x1-4),
-   arena.hbox.y0-8
-  )
-  for angle_offset in all{-0.9, -0.03, 0.03, 0.9} do
-   local b = b_thrown(pos, 30, self.dmg)
-   b.angle_offset = angle_offset
-   self:addchild(b)
-  end
+  self:fire(self:firepos(), 4)
   yieldn(40)
  end
 end
@@ -1626,8 +1638,8 @@ local pat_mined_missile = t_pattern_compound:extend{
 local pat_comp_missile = t_pattern_compound:extend{
  name = "missilex2",
  subpatterns = {pat_missile, pat_missile:extend{
- delay = 45
-}}
+   delay = 45
+  }}
 }
 
 local pat_comp_rain = t_pattern_compound:extend{
@@ -1650,9 +1662,9 @@ local pat_comp_rain_2 = t_pattern_compound:extend{
  }
 }
 
-local pat_comp_spread = t_pattern_compound:extend{
+local pat_comp_spreadbar = t_pattern_compound:extend{
  name = "spredbar",
- subpatterns = {pat_spreadthrow, pat_redbar}
+ subpatterns = {pat_spreadthrow_odd, pat_redbar}
 }
 
 local pat_comp_grav = t_pattern_compound:extend{
@@ -1660,7 +1672,7 @@ local pat_comp_grav = t_pattern_compound:extend{
  subpatterns = {pat_circgrav, pat_denyring}
 }
 
-local pat_comp_gravdense = t_pattern_compound:extend{
+local pat_comp_grav_deny = t_pattern_compound:extend{
  name = "grav sp",
  subpatterns = {pat_circgrav_dense, pat_denyring}
 }
@@ -1683,9 +1695,9 @@ local lib_patterns_med = {
  pat_meteor,
  pat_circthrow,
  pat_randthrow,
+ pat_comp_spreadbar,
  pat_circgrav_rot,
  pat_circgrav_dense,
- pat_comp_spread,
  pat_comp_grav
 }
 local lib_patterns_hard = {
@@ -1694,13 +1706,15 @@ local lib_patterns_hard = {
  pat_mined_missile,
  pat_comp_rain,
  pat_sinbar,
- pat_comp_gravdense,
+ pat_comp_grav_deny,
+ pat_spreadthrow_rapid,
  pat_spreadthrow_mix
 }
 
 local lib_patterns = arrConcat(lib_patterns_easy, lib_patterns_med, lib_patterns_hard)
 
--- Stage
+-->8
+-- stages
 
 local t_arena_frame = entity:extend{
  z = 5
@@ -1726,16 +1740,10 @@ local t_arena = mob:extend{
  difficulty_cutoff = 15
 }
 function t_arena:update()
- -- move arena with p2
- -- if (btn(0,1)) then self.shape:shift(vec(-8, 0))
- -- elseif (btn(1,1)) then self.shape:shift(vec(8, 0)) end
- -- if (btn(2,1)) then self.shape:shift(vec(0, -8))
- -- elseif (btn(3,1)) then self.shape:shift(vec(0, 8)) end
  if (self.cur_pattern and self.cur_pattern._doomed) self.cur_pattern = nil
 
  if (not self.pause and self.stage.o_soul.hp <= 0) then
   -- game over
-  -- TODO more game over logic
   save_cartdata()
   self.pause = true
   self.cur_pattern:destroy()
@@ -1766,9 +1774,9 @@ function t_arena:coupdate()
   while (self.pause) do yield() end
   if self.waveperfect then
    self.perfect_waves += 1
-   self.stage:addscore(3, 10)
+   self.stage:addscore(points_waveperfect, 10)
   else
-   self.stage:addscore(1)
+   self.stage:addscore(points_wave)
   end
  end
 end
@@ -1805,8 +1813,6 @@ function t_arena:new_wave()
  return
 end
 function t_arena:draw()
- -- TODO black frame for layered effects (stage is a hole)
-
  local drawbox = self.hbox:grow(vec_noneone):outline(1)
  rectfill(mrconcat({drawbox:unpack()}, 0))
  rect(mrconcat({drawbox:unpack()}, 3))
@@ -1861,7 +1867,7 @@ function st_game:addscore(points, color)
 end
 function st_game:loghit(bullet)
  local cur_pattern_name = self.arena.cur_pattern.name
- printa("took damage of", bullet.dmg, "during pattern", cur_pattern_name)
+ -- printa("took damage of", bullet.dmg, "during pattern", cur_pattern_name)
  if (not self.stats[cur_pattern_name]) self.stats[cur_pattern_name] = 0
  self.stats[cur_pattern_name] += bullet.dmg
  printa(self.stats)
@@ -1885,7 +1891,8 @@ function t_inspectmenu:drawui()
   [sel_index]="\f8♥",
   [sel_index+1]="\f6🅾️"
  }
- local sel_origin = self.sel_origin - vec(0, sel_index*8)
+ local sel_origin = self.sel_origin
+ if (sel_index > 8) sel_origin -= vec(0, (sel_index-8)*8)
  for i,v in ipairs(lib_patterns) do
   local c = 7
   if symbols[i] then
@@ -1950,7 +1957,7 @@ function st_game_inspect:init(pat_index)
  self.o_soul = self:add(t_soul(self.o_arena.hbox:center()))
  self.o_soul.isdemo = true
  self:add(t_graze(self.o_soul))
- printa(pat_index)
+ -- printa(pat_index)
  local o_inspectmenu = self:add(t_inspectmenu())
  o_inspectmenu.sel_index = pat_index
 
@@ -1975,12 +1982,10 @@ function t_postgame:init(game)
  end
 end
 function t_postgame:drawui()
- local s = "heart end"
- local x = (128 - (#s * 8)) / 2
- s = "\^w\^t" .. s
- print(s, x, 16, 7)
+ drawtitle("heart end", 7, 0)
  local tick_level = self.ticks
- prints(self.ticks, 64, 0, 7, 0, 1)
+ local arena = self.game.arena
+ if (debug) prints(tick_level, 64, 0, 7, 0, 1)
 
  local rowi = 1
  local a, b
@@ -2002,12 +2007,12 @@ function t_postgame:drawui()
  end
  if tick_level > 3 then
   a = nrow(); myprint("waves", a, 3)
-  b = nrow(); myprint(self.game.arena.wave_num, b, 3)
+  b = nrow(); myprint(arena.wave_num, b, 3)
   rowi += 0.5
  end
  if tick_level > 4 then
   myprint("perfect", a, 5)
-  myprint(self.game.arena.perfect_waves, b, 5)
+  myprint(arena.perfect_waves, b, 5)
   rowi += 0.5
  end
  if tick_level > 5 then
@@ -2027,13 +2032,15 @@ function t_postgame:coupdate()
   yieldn(15)
   if (not btn(5)) yieldn(15)
   self.ticks += 1
-  sfx(002)
+  sfx(sfx_screentick)
  end
  self.ticks = 7
- if (btn(5)) input_block = true -- don't skip to menu
+ if (btn(5)) input_block = true  -- don't skip to menu
  while true do
-  if (btnp(5) and not input_block) cur_stage = st_mainmenu()
-  if (btnp(4) and not input_block) cur_stage = st_game()
+  if not input_block then
+   if (btnp(5)) cur_stage = st_mainmenu()
+   if (btnp(4)) cur_stage = st_game()
+  end
   if (not btn(5)) input_block = false
   yield()
  end
@@ -2049,16 +2056,10 @@ local t_mainmenu = entity:extend{
  textcolor=0,
  greyscale=split"0, 0, 1, 5, 13, 6, 7"
 }
--- function t_mainmenu:init()
---  entity.init(self)
--- end
+
 function t_mainmenu:drawui()
  -- for i, s in ipairs{"heart&"} do
- local s = "heart&"
- local x = (128 - (#s * 8)) / 2
- s = "\^w\^t" .. s
- print(s, x, 16 + 2, self.greyscale[self.textcolor-4])
- print(s, x, 16, self.greyscale[self.textcolor])
+ drawtitle("heart&", self.greyscale[self.textcolor], self.greyscale[self.textcolor-4])
 -- end
 end
 function t_mainmenu:coupdate()
@@ -2075,15 +2076,26 @@ function t_mainmenu:coupdate()
  self:mainmenu()
 end
 function t_mainmenu:mainmenu()
- self.stage:add(choicer({
-    {"start", function()
-      cur_stage = st_game()
-     end},
-    {"library", function()
-      cur_stage = st_game_inspect(i)
-     end},
-    {"help", closure(self.mainmenu, self)}
-   }, {pos=vec(16, 64)}))
+ local choices = {
+  {"start", function()
+    cur_stage = st_game()
+   end},
+  {"library", function()
+    cur_stage = st_game_inspect(i)
+   end},
+  {"help", closure(self.mainmenu, self)}
+ }
+ if high_score >= 100 then
+  add(choices, {"hard", function()
+     cur_stage = st_game()
+     cur_stage.o_arena.difficulty_cutoff = 0
+     local soul = cur_stage.o_soul
+     soul.maxhp -= 10
+     soul.maxsp += 10
+     soul.hp = min(soul.maxhp, soul.hp)
+    end}, 2)
+ end
+ self.stage:add(choicer(choices, {pos=vec(16, 64)}))
 end
 
 st_mainmenu = stage:extend{}
@@ -2101,7 +2113,7 @@ if has_save then
  high_score = dget(0)
 
  function map_seg(table, seen_map)
- local val = 1
+  local val = 1
   for i,v in ipairs(table) do
    printa(seen_map, v.name, val, (val & seen_map))
    if ((val & seen_map) > 0) v.seen = true
