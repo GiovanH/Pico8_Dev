@@ -782,7 +782,7 @@ function t_soul:dmghit(dmg)
   return false
  else
   if (not self.isdemo) self.hp -= dmg
-  printa(self.isdemo, dmg, self.hp)
+  -- printa(self.isdemo, dmg, self.hp)
   self.stage.arena.waveperfect = false
   self.invuln = 12
   sfx(00)
@@ -877,9 +877,6 @@ function t_trailparticle:init(pos)
  self.pos = pos
  if (stat(7) < 60 and not self.critical) self:destroy()
 end
-function t_trailparticle:update()
- entity.update(self)
-end
 function t_trailparticle:draw()
  pset(self.pos.x, self.pos.y, self.col)
 end
@@ -913,6 +910,7 @@ end
 function t_bullet:oncollide(player)
  if (self:canhit(player)) then
   local didhit = player:dmghit(self.dmg)
+  if (didhit) self.stage:loghit(self)
   if (self.destroy_on_dmg and didhit) self:destroy()
  end
 end
@@ -924,7 +922,7 @@ function t_bullet:update()
  if (self.dmg_color == "orange") self.paltab = {[7]=9}
 
  -- if (self.stage.mclock % 4 == 0)
- -- if (self.vel:mag() > 0 and debug and self.stage.mclock % 4 == 0) self.stage:add(t_trailparticle(self.pos))
+ if (self.vel:mag() > 0 and debug and self.stage.mclock % 4 == 0) self.stage:add(t_trailparticle(self.pos))
 
  mob.update(self)
 end
@@ -1267,7 +1265,7 @@ local pat_rain_red = pat_rain:extend{
 }
 
 local pat_sinbar = t_pattern:extend{
- name = "gapbar (sin)",
+ name = "sinbar",
  dmg = 2,
  lifespan = 500
 }
@@ -1349,7 +1347,7 @@ function pat_bluebar:coupdate()
 end
 
 local pat_circthrow = t_pattern:extend{
- name = "circle thrower",
+ name = "circthro",
  dmg = 1,
  lifespan = 6 * 60,
  numbullets = 30
@@ -1359,7 +1357,6 @@ function pat_circthrow:coupdate()
  local r = 50
  local n = self.numbullets
  local rotation = rndi(4)/4  -- rotate whole spiral around center
- printa(rotation)
  for i = 1, n do
   self:addchild(b_thrown(vec(
      r*cos(i/n + rotation),
@@ -1395,7 +1392,7 @@ function pat_randthrow:coupdate()
 end
 
 local pat_spreadthrow = t_pattern:extend{
- name = "spreadthrow",
+ name = "sprdgun",
  dmg = 1,
  lifespan = 5 * 60,
  seen = true
@@ -1417,7 +1414,7 @@ function pat_spreadthrow:coupdate()
 end
 
 local pat_spreadthrow_mix = t_pattern:extend{
- name = "spreadthrow mix",
+ name = "sprdgun2",
  dmg = 1,
  lifespan = 5 * 60,
  seen = true
@@ -1574,7 +1571,6 @@ function pat_circgrav:spawnwave(n, angle_offset)
      r*cos(i/n + angle_offset),
      r*sin(i/n + angle_offset)
     ) + arena.hbox:center(),
-    2*n+10,
     self.dmg
    )
   )
@@ -1582,7 +1578,7 @@ function pat_circgrav:spawnwave(n, angle_offset)
 end
 
 local pat_circgrav_dense = pat_circgrav:extend{
- name = "gravity dense",
+ name = "gravdense",
  dmg = 1,
  lifespan = 6 * 60,
  numbullets = 6,
@@ -1597,7 +1593,7 @@ local pat_circgrav_rot = pat_circgrav:extend{
 }
 
 local pat_denyring = t_pattern:extend{
- name = "denial ring",
+ name = "denring",
  dmg = 1,
  lifespan = 6 * 60,
  numbullets = 24
@@ -1607,7 +1603,6 @@ function pat_denyring:coupdate()
  local r = 60
  local n = self.numbullets
  local rotation = rndi(4)/4  -- rotate whole spiral around center
- printa(rotation)
  for i = 1, n do
   local bpos = vec(
    r*cos(i/n),
@@ -1623,21 +1618,20 @@ function pat_denyring:coupdate()
  end
 end
 
-local pat_missile_delayed = pat_missile:extend{
- delay = 45
-}
 local pat_mined_missile = t_pattern_compound:extend{
- name = "missile (mined)",
+ name = "missmine",
  subpatterns = {pat_miner_d3, pat_missile}
 }
 
 local pat_comp_missile = t_pattern_compound:extend{
- name = "missile (compound)",
- subpatterns = {pat_missile, pat_missile_delayed}
+ name = "missilex2",
+ subpatterns = {pat_missile, pat_missile:extend{
+ delay = 45
+}}
 }
 
 local pat_comp_rain = t_pattern_compound:extend{
- name = "rain (compound)",
+ name = "orngmine",
  subpatterns = {pat_miner, pat_rain:extend{
    b = b_fall:extend{dmg_color="orange"}
   }
@@ -1645,7 +1639,7 @@ local pat_comp_rain = t_pattern_compound:extend{
 }
 
 local pat_comp_rain_2 = t_pattern_compound:extend{
- name = "rain (compound 2)",
+ name = "rain x2",
  subpatterns = {pat_rain:extend{
    fallspd = vec(0, 0.3),
    delay = 40
@@ -1657,17 +1651,17 @@ local pat_comp_rain_2 = t_pattern_compound:extend{
 }
 
 local pat_comp_spread = t_pattern_compound:extend{
- name = "spread (compound)",
+ name = "spredbar",
  subpatterns = {pat_spreadthrow, pat_redbar}
 }
 
 local pat_comp_grav = t_pattern_compound:extend{
- name = "gravity (compound)",
+ name = "dengrav",
  subpatterns = {pat_circgrav, pat_denyring}
 }
 
 local pat_comp_gravdense = t_pattern_compound:extend{
- name = "gravity (supercompound)",
+ name = "grav sp",
  subpatterns = {pat_circgrav_dense, pat_denyring}
 }
 
@@ -1691,11 +1685,12 @@ local lib_patterns_med = {
  pat_randthrow,
  pat_circgrav_rot,
  pat_circgrav_dense,
- pat_comp_rain_2,
+ pat_comp_spread,
  pat_comp_grav
 }
 local lib_patterns_hard = {
  pat_comp_missile,
+ pat_comp_rain_2,
  pat_mined_missile,
  pat_comp_rain,
  pat_sinbar,
@@ -1753,6 +1748,7 @@ function t_arena:onadd()
  self.stage.arena = self
  self.stage:add(t_arena_frame(self))
  self.wave_num = 0
+ self.perfect_waves = 0
 end
 function t_arena:coupdate()
  while true do
@@ -1768,8 +1764,8 @@ function t_arena:coupdate()
   self.waveperfect = true
   while (self.cur_pattern) do yield() end
   while (self.pause) do yield() end
-  printa("waveperfect", self.waveperfect)
   if self.waveperfect then
+   self.perfect_waves += 1
    self.stage:addscore(3, 10)
   else
    self.stage:addscore(1)
@@ -1795,10 +1791,10 @@ function t_arena:new_wave()
   self.patternbag = {pat_spreadthrow}
  elseif #self.patternbag < 1 or self.wave_num == self.difficulty_cutoff then
   if self.wave_num >= self.difficulty_cutoff then
-   printh("New hard/med bag")
+   -- printh("New hard/med bag")
    self.patternbag = arrConcat(lib_patterns_med, lib_patterns_hard)
   else
-   printh("New easy/med bag")
+   -- printh("New easy/med bag")
    self.patternbag = arrConcat(lib_patterns_easy, lib_patterns_med)
   end
   shuffle_table(self.patternbag)
@@ -1855,12 +1851,20 @@ function st_game:init()
  self:add(t_scoreclock())
 
  self.score = 0
+ self.stats = {}
 end
 function st_game:addscore(points, color)
  color = color or 7
  self.score += points
  high_score = max(high_score, self.score)
  self:add(t_scorefx(vec(128, 116), vec(0, -0.5), points, color))
+end
+function st_game:loghit(bullet)
+ local cur_pattern_name = self.arena.cur_pattern.name
+ printa("took damage of", bullet.dmg, "during pattern", cur_pattern_name)
+ if (not self.stats[cur_pattern_name]) self.stats[cur_pattern_name] = 0
+ self.stats[cur_pattern_name] += bullet.dmg
+ printa(self.stats)
 end
 
 local t_inspectmenu = entity:extend{
@@ -1953,6 +1957,9 @@ function st_game_inspect:init(pat_index)
 -- self.o_arena.onlypattern = lib_patterns[pat_index]
 end
 
+function st_game_inspect:loghit(bullet)
+-- pass
+end
 -- Menus
 
 local t_postgame = entity:extend{}
@@ -1960,6 +1967,12 @@ function t_postgame:init(game)
  entity.init(self)
  self.game = game
  self.ticks = 0
+
+ self.hardname = "none"
+ self.hardnum = 0
+ for name, num in pairs(game.stats) do
+  if (num > self.hardnum) self.hardname = name; self.hardnum = num
+ end
 end
 function t_postgame:drawui()
  local s = "heart end"
@@ -1969,17 +1982,39 @@ function t_postgame:drawui()
  local tick_level = self.ticks
  prints(self.ticks, 64, 0, 7, 0, 1)
 
+ local rowi = 1
+ local a, b
+ function nrow() rowi += 1; return rowi end
  function r(i) return 16+(7*i) end
- function myprint(s, i)
-  prints(s, 64, r(i), 7, 0, 1)
+ function myprint(s, i, align, c)
+  prints(s, 16 * (align or 4), r(i), (c or 7), 0, 1)
  end
  if tick_level > 1 then
-  myprint("score", 2)
-  myprint(self.game.score..'00', 3)
+  myprint("score", nrow())
+  a = nrow(); myprint(self.game.score..'00', a)
+  if (debug or self.game.score == high_score) myprint('new best!', a, 6, 10)
+  rowi += 0.5
  end
  if tick_level > 2 then
-  myprint("high", 5)
-  myprint(high_score..'00', 6)
+  myprint("high", nrow())
+  myprint(high_score..'00', nrow())
+  rowi += 0.5
+ end
+ if tick_level > 3 then
+  a = nrow(); myprint("waves", a, 3)
+  b = nrow(); myprint(self.game.arena.wave_num, b, 3)
+  rowi += 0.5
+ end
+ if tick_level > 4 then
+  myprint("perfect", a, 5)
+  myprint(self.game.arena.perfect_waves, b, 5)
+  rowi += 0.5
+ end
+ if tick_level > 5 then
+  myprint("hardest", nrow())
+  b = nrow(); myprint(self.hardname, b, 3)
+  myprint(self.hardnum, b, 5)
+  rowi += 0.5
  end
  if tick_level > 6 then
   prints("🅾️again", 32, 112, 7, 0, 1)
@@ -1987,14 +2022,19 @@ function t_postgame:drawui()
  end
 end
 function t_postgame:coupdate()
+ local input_block = false
  for x=0,6 do
-  yieldn(30)
+  yieldn(15)
+  if (not btn(5)) yieldn(15)
   self.ticks += 1
   sfx(002)
  end
+ self.ticks = 7
+ if (btn(5)) input_block = true -- don't skip to menu
  while true do
-  if (btnp(5)) cur_stage = st_mainmenu()
-  if (btnp(4)) cur_stage = st_game()
+  if (btnp(5) and not input_block) cur_stage = st_mainmenu()
+  if (btnp(4) and not input_block) cur_stage = st_game()
+  if (not btn(5)) input_block = false
   yield()
  end
 end
@@ -2003,9 +2043,6 @@ st_postgame = stage:extend{}
 function st_postgame:init(game)
  stage.init(self)
  self:add(t_postgame(game))
--- self:schedule(120, function()
---   cur_stage = st_mainmenu()
---  end)
 end
 
 local t_mainmenu = entity:extend{
@@ -2062,23 +2099,19 @@ local has_save = cartdata("hearten")
 
 if has_save then
  high_score = dget(0)
- local val = 1
 
- for i,v in ipairs(lib_patterns_easy) do
-  -- printa(v.name, val, (val & seen_map))
-  if ((val & dget(1)) > 0) v.seen = true
-  val *= 2
+ function map_seg(table, seen_map)
+ local val = 1
+  for i,v in ipairs(table) do
+   printa(seen_map, v.name, val, (val & seen_map))
+   if ((val & seen_map) > 0) v.seen = true
+   val *= 2
+  end
  end
- for i,v in ipairs(lib_patterns_med) do
-  -- printa(v.name, val, (val & seen_map))
-  if ((val & dget(2)) > 0) v.seen = true
-  val *= 2
- end
- for i,v in ipairs(lib_patterns_hard) do
-  -- printa(v.name, val, (val & seen_map))
-  if ((val & dget(3)) > 0) v.seen = true
-  val *= 2
- end
+
+ map_seg(lib_patterns_easy, dget(1))
+ map_seg(lib_patterns_med,  dget(2))
+ map_seg(lib_patterns_hard, dget(3))
 else
  high_score = 10
 end
@@ -2087,29 +2120,19 @@ function save_cartdata()
  dset(0, high_score)
 
  printa("saving")
- local seen_map = 0b0
- local val = 1
- for i,v in ipairs(lib_patterns_easy) do
-  if (v.seen) seen_map += val
-  val *= 2
- end
- dset(1, seen_map)
 
- local seen_map = 0b0
- local val = 1
- for i,v in ipairs(lib_patterns_med) do
-  if (v.seen) seen_map += val
-  val *= 2
+ function map_seg(table)
+  local seen_map = 0b0
+  local val = 1
+  for i,v in ipairs(table) do
+   if (v.seen) seen_map += val
+   val *= 2
+  end
+  return seen_map
  end
- dset(2, seen_map)
-
- local seen_map = 0b0
- local val = 1
- for i,v in ipairs(lib_patterns_hard) do
-  if (v.seen) seen_map += val
-  val *= 2
- end
- dset(3, seen_map)
+ dset(1, map_seg(lib_patterns_easy))
+ dset(2, map_seg(lib_patterns_med))
+ dset(3, map_seg(lib_patterns_hard))
 end
 
 function _init()
