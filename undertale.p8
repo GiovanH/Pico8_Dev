@@ -585,6 +585,16 @@ end
 -->8
 -- game utility
 
+function make_note(pitch, instr, vol, effect)
+ return { pitch + 64*(instr%4) , 16*effect + 2*vol + flr(instr/4) }  -- flr may be redundant when this is poke'd into memory
+end
+
+function set_note(sfx, time, note)
+ local addr = 0x3200 + 68*sfx + 2*time
+ poke(addr, note[1])
+ poke(addr+1, note[2])
+end
+
 function drawtitle(s, c1, c2)
  local x = (128 - (#s * 8)) / 2
  s = "\^w\^t" .. s
@@ -792,7 +802,6 @@ end
 function t_soul:ongraze(bullet)
  if (self.invuln > 0) return false
  if (not self.isdemo) self.sp += 1
- sfx(sfx_graze)
  if (self.sp >= self.maxsp) then
   self.sp = 0
   if self.hp < self.maxhp then
@@ -803,6 +812,16 @@ function t_soul:ongraze(bullet)
    sfx(sfx_overheal)
    self.stage:addscore(points_overheal, 11)
   end
+ else
+  set_note(sfx_graze, 1,
+   make_note(
+    flr( self.sp/self.maxsp * (64 - 0) + 0 ),  -- pitch
+    2,  -- instr
+    1,  --vol
+    6  -- effect
+   )
+  )
+  sfx(sfx_graze)
  end
  return true
 end
@@ -1416,19 +1435,18 @@ function pat_spreadthrow:firepos()
  )
 end
 
-
 local pat_spreadthrow_rapid = pat_spreadthrow:extend{
  name = "sprdgunr",
  seen = false,
  bullet = b_thrown:extend{anim={001}, size=vec(4)},
- lifespan = 390, -- (32 + 58) * 4 + 30
+ lifespan = 390,  -- (32 + 58) * 4 + 30
 }
 function pat_spreadthrow_rapid:coupdate()
  while true do
   local p = self:firepos()
   for i=0,4 do
-  self:fire(p, 3)
-  yieldn(8)
+   self:fire(p, 3)
+   yieldn(8)
   end
   yieldn(58)
  end
@@ -2180,7 +2198,7 @@ function _draw()
  cur_stage:draw()
 end
 __gfx__
-08808800e77888887777788800000000001111000111100000700000077000000777000000700000000000000000000000000000000000000000000000000000
+08808800877888887777788800000000001111000111100000700000077000000777000000700000000000000000000000000000000000000000000000000000
 88888880777788887070788800000000010000101000010007770000777770007777700007770000000000000000000000000000000000000000000000000000
 88888880777788887777788800000000100000010000001007770000777777007777700007770000000000000000000000000000000000000000000000000000
 88888880877888887700788800000000100000000000001077777000777770000777000077777000000000000000000000000000000000000000000000000000
