@@ -4,17 +4,17 @@ __lua__
 -- hearten
 -- by giovanh
 
--- help menu
+-- I don't like how pat_comp_spreadbar requires UT mechanic knowledge
 -- better meter graphics
 -- better library menu graphics
--- juicier score graphics
--- wavey text effect on score bonus
--- little dragon adventure pixel shatter effect
+-- juicier score graphics  - wavey text effect on score bonus
+
+-- help menu
 -- nest2 background effects on heat up
 
 -- global vars
 
-local debug = true  -- (stat(6) == 'debug')
+local debug = (stat(6) == 'debug')
 local cur_stage = nil
 
 sfx_dmg = 000
@@ -844,7 +844,6 @@ function t_soul:drawui()
  local perc = amt / max
  local hpbox = bbox(origin, vec(8, -60))
  local hplostv = vec(0, hpbox.h * (perc - 1))
- -- printa(perc, hpbox, hplost)
  rectfill(mrconcatu(hpbox:grow(hplostv), col))
  rect(mrconcatu(hpbox, 10))
 -- print(amt .. "/" .. max, mrconcatu(origin+vec(2,2), 9))
@@ -914,7 +913,6 @@ local t_bullet = mob:extend{
  vel = vec(0),
  acc = vec(0),
  tcol = 8,
- dmg_color = nil,
  destroy_on_dmg = true,
 }
 function t_bullet:init(pos, dmg)
@@ -924,11 +922,8 @@ function t_bullet:init(pos, dmg)
  if (self.anchor == 'CENTER') self.anchor = self.size / -2
  mob.init(self, pos, self.spr, self.size)
  self.dmg = dmg
--- self.dmg_color = rndc{nil, "blue", "orange"}
 end
 function t_bullet:canhit(player)
- if (self.dmg_color == "blue" and not player.moved) return false
- if (self.dmg_color == "orange" and player.moved) return false
  return true
 end
 function t_bullet:oncollide(player)
@@ -941,9 +936,6 @@ end
 function t_bullet:update()
  self.pos += self.vel
  self.vel += self.acc
-
- if (self.dmg_color == "blue") self.paltab = {[7]=12}
- if (self.dmg_color == "orange") self.paltab = {[7]=9}
 
  -- if (self.stage.mclock % 4 == 0)
  if (self.vel:mag() > 0 and debug and self.stage.mclock % 4 == 0) self.stage:add(t_trailparticle(self.pos))
@@ -999,20 +991,6 @@ function b_area_sinbar:coupdate()
   yield()
  end
 end
-
-local b_redbar_tb = b_area_gapbar:extend{
- z = 5,
- vel = vec(0, 0.5),
- dmg_color = "orange",
- destroy_on_dmg = false
-}
-
-local b_bluebar_lr = b_area_gapbar:extend{
- z = 5,
- vel = vec(-0.4, 0),
- dmg_color = "blue",
- destroy_on_dmg = false
-}
 
 local b_fall = t_bullet:extend{
  z = 4,
@@ -1149,10 +1127,8 @@ end
 
 local b_tocenter = t_bullet:extend{
  ttl = 300,
- anim = {001},
- -- anim = {016, 017, 018, 019},
- -- frame_len = 4,
- size = vec(4),
+ anim = {003},
+ size = vec(5),
  spin_amt = 0
 }
 function b_tocenter:coupdate()
@@ -1180,6 +1156,25 @@ local b_denywall = b_meteorexp:extend{
  bsize = vec(6),
 }
 
+local b_bounceball = t_bullet:extend{
+ ttl = 9000,
+ anim = {001},
+ vel = vec(.5, -.5),
+ dir = 0.25,
+ size = vec(4)
+}
+function b_bounceball:coupdate()
+ while (not self.hbox:within(self.stage.arena.hbox)) do
+  yield()
+ end
+ while true do
+ if (not self.hbox:within(self.stage.arena.hbox)) self.vel = self.vel:rotate(self.dir)
+  yield()
+ end
+end
+
+local b_bounceball2 = b_bounceball:extend{vel=vec(-0.5, -0.5), dir=-0.25}
+
 -->8
 -- patterns
 
@@ -1195,9 +1190,9 @@ function t_pattern:init(arena)
  self.children = {}
  self.ttl = self.lifespan
 end
-function t_pattern:drawui()
- line(0, 0, 128*(self.ttl / self.lifespan), 0, 10)
-end
+-- function t_pattern:drawui()
+--  line(0, 0, 128*(self.ttl / self.lifespan), 0, 10)
+-- end
 function t_pattern:addchild(newbullet)
  if (self.stage) add(self.children, self.stage:add(newbullet))
 end
@@ -1287,10 +1282,6 @@ function pat_rain:coupdate()
  end
 end
 
-local pat_rain_red = pat_rain:extend{
- b = b_fall:extend{dmg_color="orange"}
-}
-
 local pat_sinbar = t_pattern:extend{
  name = "sinbar",
  dmg = 2,
@@ -1336,7 +1327,7 @@ function pat_redbar:coupdate()
     vec(self.stage.arena.hbox.x0, -3),
     vec(self.stage.arena.hbox.w, 3),
     self.dmg
-    ))
+   ))
   yieldn(80)
  end
 end
@@ -1435,7 +1426,6 @@ end
 
 local pat_spreadthrow_rapid = pat_spreadthrow:extend{
  name = "sprdgunr",
- seen = false,
  bullet = b_thrown:extend{anim={001}, size=vec(4)},
  lifespan = 390,  -- (32 + 58) * 4 + 30
 }
@@ -1452,7 +1442,6 @@ end
 
 local pat_spreadthrow_odd = pat_spreadthrow:extend{
  name = "sprdguno",
- seen = false
 }
 function pat_spreadthrow_odd:coupdate()
  while true do
@@ -1462,10 +1451,9 @@ function pat_spreadthrow_odd:coupdate()
 end
 
 local pat_spreadthrow_mix = pat_spreadthrow:extend{
- name = "sprdgun2",
+ name = "sprdalt",
  dmg = 1,
- lifespan = 5 * 60,
- seen = false
+ lifespan = 5 * 60
 }
 function pat_spreadthrow_mix:coupdate()
  while true do
@@ -1494,7 +1482,6 @@ function pat_miner:coupdate()
  end
  shuffle_table(vecs)
  for v in all(vecs) do
-  -- printa(arena.hbox)
   warnbox = bbox(
    arena.hbox.origin + v:dotp(arena.hbox.size),
    vec(0,0)
@@ -1553,10 +1540,6 @@ function pat_meteor:coupdate()
   ):outline(10)
 
   self:addchild(t_warnbox(hitbox.origin, false, hitbox.size, {ttl=self.warntime}))
-  -- self.stage:schedule(self.warntime, closure(
-  --  self.addchild, self,
-  --  t_bullet_area(hitbox:center(), hitbox.size, bttl)
-  -- ))
 
   self.stage:schedule(self.warntime, function()
     local n = 10
@@ -1608,13 +1591,6 @@ function pat_circgrav:spawnwave(n, angle_offset)
  end
 end
 
-local pat_circgrav_dense = pat_circgrav:extend{
- name = "gravdense",
- dmg = 1,
- lifespan = 6 * 60,
- numbullets = 6,
-}
-
 local pat_circgrav_rot = pat_circgrav:extend{
  name = "gravspin",
  dmg = 1,
@@ -1626,7 +1602,7 @@ local pat_circgrav_rot = pat_circgrav:extend{
 local pat_denyring = t_pattern:extend{
  name = "denring",
  dmg = 1,
- lifespan = 6 * 60,
+ lifespan = 3 * 60,
  numbullets = 24
 }
 function pat_denyring:coupdate()
@@ -1655,18 +1631,39 @@ local pat_mined_missile = t_pattern_compound:extend{
 }
 
 local pat_comp_missile = t_pattern_compound:extend{
- name = "missilex2",
+ name = "dblmsle",
  subpatterns = {pat_missile, pat_missile:extend{
    delay = 45
   }}
 }
 
-local pat_comp_rain = t_pattern_compound:extend{
- name = "orngmine",
- subpatterns = {pat_miner, pat_rain:extend{
-   b = b_fall:extend{dmg_color="orange"}
-  }
- }
+local pat_bounceball = t_pattern:extend{
+ name = "brkout",
+ dmg = 1,
+ lifespan = 5 * 60,
+ loops = 2,
+ cadence = 50
+}
+function pat_bounceball:coupdate()
+ local arena = self.stage.arena
+ for i = 1, self.loops do
+  for b in all{b_bounceball, b_bounceball2} do
+   self:addchild(b(
+    vec(
+     rndr(arena.hbox.x0+12, arena.hbox.x1-12),
+     arena.hbox.y1+8
+    ),
+    self.dmg))
+   yieldn(self.cadence)
+  end
+ end
+end
+
+local pat_bounceball2 = pat_bounceball:extend{
+ name = "arkanoid",
+ lifespan = 6 * 60,
+ loops = 3,
+ cadence = 45
 }
 
 local pat_comp_rain_2 = t_pattern_compound:extend{
@@ -1681,11 +1678,6 @@ local pat_comp_rain_2 = t_pattern_compound:extend{
  }
 }
 
-local pat_comp_spreadbar = t_pattern_compound:extend{
- name = "spredbar",
- subpatterns = {pat_spreadthrow_odd, pat_redbar}
-}
-
 local pat_comp_grav = t_pattern_compound:extend{
  name = "dengrav",
  subpatterns = {pat_circgrav, pat_denyring}
@@ -1696,34 +1688,31 @@ local pat_comp_grav_deny = t_pattern_compound:extend{
  subpatterns = {pat_circgrav_dense, pat_denyring}
 }
 
--- local pat_comp_bars = t_pattern_compound:extend{
---  name = "bars (compound)",
---  subpatterns = {pat_bluebar, pat_gapbar}
--- }
-
 local lib_patterns_easy = {
+ pat_rain,
+ pat_gapbar,
  pat_miner,
  pat_missile,
- pat_gapbar,
- pat_rain,
  pat_circgrav,
+ pat_bounceball,
  pat_denyring,
 }
 local lib_patterns_med = {
- pat_spreadthrow,
  pat_meteor,
+ pat_spreadthrow,
  pat_circthrow,
  pat_randthrow,
- pat_comp_spreadbar,
  pat_circgrav_rot,
- pat_circgrav_dense,
+ -- pat_circgrav_dense,
  pat_comp_grav
 }
 local lib_patterns_hard = {
  pat_comp_missile,
  pat_comp_rain_2,
+ pat_bounceball2,
+ -- pat_comp_spreadbar,
  pat_mined_missile,
- pat_comp_rain,
+ -- pat_comp_rain,
  pat_sinbar,
  pat_comp_grav_deny,
  pat_spreadthrow_rapid,
@@ -1781,7 +1770,7 @@ function t_arena:coupdate()
  while true do
   -- Rest
   if not self.onlypattern then
-   printh("resting")
+   -- printh("resting")
    self.cur_pattern = self.stage:add(pat_rest(self))
    while (self.cur_pattern) do yield() end
   end
@@ -1815,7 +1804,7 @@ function t_arena:new_wave()
  -- Wait for cur_pattern to die
  self.wave_num += 1
  if self.wave_num == 1 then
-  self.patternbag = {pat_spreadthrow}
+  self.patternbag = {pat_spreadthrow} -- pat_rest,
  elseif #self.patternbag < 1 or self.wave_num == self.difficulty_cutoff then
   if self.wave_num >= self.difficulty_cutoff then
    -- printh("New hard/med bag")
@@ -1890,7 +1879,7 @@ function st_game:loghit(bullet)
  -- printa("took damage of", bullet.dmg, "during pattern", cur_pattern_name)
  if (not self.stats[cur_pattern_name]) self.stats[cur_pattern_name] = 0
  self.stats[cur_pattern_name] += bullet.dmg
- printa(self.stats)
+-- printa(self.stats)
 end
 
 local t_inspectmenu = entity:extend{
@@ -1956,7 +1945,7 @@ function t_inspectmenu:update()
 end
 function t_inspectmenu:update_sel()
  -- Updates selection on change or init
- printa(self.sel_index, #lib_patterns)
+ -- printa(self.sel_index, #lib_patterns)
  local arena = self.stage.o_arena
  local focused_pattern = lib_patterns[self.sel_index]
  if focused_pattern.seen then
@@ -2036,7 +2025,7 @@ function t_postgame:drawui()
   rowi += 0.5
  end
  if tick_level > 5 then
-  myprint("hardest", nrow())
+  myprint("most dmg", nrow())
   b = nrow(); myprint(self.hardname, b, 3)
   myprint(self.hardnum, b, 5)
   rowi += 0.5
@@ -2081,6 +2070,7 @@ local t_mainmenu = entity:extend{
 function t_mainmenu:drawui()
  -- for i, s in ipairs{"heart&"} do
  drawtitle("heart&", self.greyscale[self.textcolor], self.greyscale[self.textcolor-4])
+-- printa(self.choicer.selected)
 -- end
 end
 function t_mainmenu:coupdate()
@@ -2199,30 +2189,32 @@ function _draw()
  cur_stage:draw()
 end
 __gfx__
-08808800877888887777788800000000001111000111100000700000077000000777000000700000000000000000000000000000000000000000000000000000
-88888880777788887070788800000000010000101000010007770000777770007777700007770000000000000000000000000000000000000000000000000000
-88888880777788887777788800000000100000010000001007770000777777007777700007770000000000000000000000000000000000000000000000000000
-88888880877888887700788800000000100000000000001077777000777770000777000077777000000000000000000000000000000000000000000000000000
-08888800888888887777788800000000100000000000001077777000077000000777000077777000000000000000000000000000000000000000000000000000
-00888000888888888888888800000000100000000000001007770000000000000070000007770000000000000000000000000000000000000000000000000000
-00080000888888888888888800000000100000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000888888888888888800000000100000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08808800877888887777788887778888001111000111100000700000077000000777000000700000000000000000000000000000000000000000000000000000
+88888880777788887070788877707888010000101000010007770000777770007777700007770000000000000000000000000000000000000000000000000000
+88888880777788887777788877777888100000010000001007770000777777007777700007770000000000000000000000000000000000000000000000000000
+88888880877888887700788870777888100000000000001077777000777770000777000077777000000000000000000000000000000000000000000000000000
+08888800888888887777788887778888100000000000001077777000077000000777000077777000000000000000000000000000000000000000000000000000
+00888000888888888888888888888888100000000000001007770000000000000070000007770000000000000000000000000000000000000000000000000000
+00080000888888888888888888888888100000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000888888888888888888888888100000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000
 88778888877888888888888888877888010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000
-87777888777788888777788888777788010000000000010000000000770007700777777007777770077000000777700000000000000000000000000000000000
-87777888777778887777778887777788001000000000100000000000770007700770077007700770077000000770077000000000000000000000000000000000
-87777888877777887777778877777888000100000001000000000000770707700770077007700770077000000770077000000000000000000000000000000000
-87777888887777888777788877778888000010000010000000000000777777700770077007777000077000000770077000000000000000000000000000000000
-88778888888778888888888887788888000001000100000000000000777077700770077007700770077000000770077000000000000000000000000000000000
-88888888888888888888888888888888000000101000000000000000770007700777777007700770077777700777777000000000000000000000000000000000
+87777888777788888777788888777788010000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000
+87777888777778887777778887777788001000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000
+87777888877777887777778877777888000100000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+87777888887777888777788877778888000010000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+88778888888778888888888887788888000001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+88888888888888888888888888888888000000101000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 88888888888888888888888888888888000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00112233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00112233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-44556677000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-44556677000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-8899aabb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-8899aabb000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-ccddeeff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-ccddeeff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00112233877778888777888887778888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00112233777077887787788877877888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+44556677777777887888788878887888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+44556677707777887787788877877888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+8899aabb777077888777888887778888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+8899aabb877778888888888888888888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+ccddeeff888888888888888888888888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+ccddeeff888888888888888888888888000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__map__
+0000000000000000000000210000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
 000100001d0501a0500c0500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 010800001162500600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600006000060000600
